@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c6hiqpa7lgoc4"]
+
+[ext_resource type="Script" uid="uid://bo8fyhd1ah8bg" path="res://scripts/Tabuleiros.gd" id="1_cb8rt"]
+
+[node name="Tabuleiros" type="Node3D" unique_id=2084916303]
+script = ExtResource("1_cb8rt")

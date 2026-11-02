@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dn2r8mux7j6bb"
-path.s3tc="res://.godot/imported/elvis ovo.png-f40d2cd0dc720d355b5e5ef6ea8a1dd6.s3tc.ctex"
+uid="uid://yjaepjbuf5jp"
+path.s3tc="res://.godot/imported/kuzim.png-e61f9f52b15ea8a84352cba21e7ed946.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://elvis ovo.png"
-dest_files=["res://.godot/imported/elvis ovo.png-f40d2cd0dc720d355b5e5ef6ea8a1dd6.s3tc.ctex"]
+source_file="res://texturas/kuzim.png"
+dest_files=["res://.godot/imported/kuzim.png-e61f9f52b15ea8a84352cba21e7ed946.s3tc.ctex"]
 
 [params]
 

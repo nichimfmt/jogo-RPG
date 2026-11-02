@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://ccf3n88fw0hn1"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_iai08"]
+size = Vector3(2, 0.2, 2)
+
+[node name="Piso" type="Node3D" unique_id=1416751114]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=936234864]
+mesh = SubResource("BoxMesh_iai08")

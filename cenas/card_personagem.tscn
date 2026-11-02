@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://vhkgua8sntuo"]
+
+[ext_resource type="Script" uid="uid://b6wi76iav221f" path="res://scripts/card_personagem.gd" id="1_cwjhm"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_272bh"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0, 0.8, 1)
+
+[node name="CardKaelen" type="Button" unique_id=1474778421]
+custom_minimum_size = Vector2(280, 100)
+offset_left = 1.0
+offset_top = 48.0
+offset_right = 271.0
+offset_bottom = 148.0
+theme_override_styles/normal = SubResource("StyleBoxFlat_272bh")
+script = ExtResource("1_cwjhm")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="." unique_id=750645366]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+accessibility_region = true
+alignment = 1
+
+[node name="TextureRect" type="TextureRect" parent="HBoxContainer" unique_id=1299955347]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer" unique_id=801232754]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer" unique_id=794771095]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="HBoxContainer/VBoxContainer" unique_id=745275094]
+layout_mode = 2
+
+[node name="ProgressBar" type="ProgressBar" parent="HBoxContainer/VBoxContainer" unique_id=212446713]
+layout_mode = 2

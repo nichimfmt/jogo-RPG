@@ -1,0 +1,124 @@
+[gd_scene format=3 uid="uid://bcgf26drh4gpw"]
+
+[ext_resource type="Script" uid="uid://bi6iehveltpnr" path="res://scripts/main.gd" id="1_v1d1r"]
+[ext_resource type="PackedScene" uid="uid://c6hiqpa7lgoc4" path="res://cenas/Tabuleiros.tscn" id="4_b30p5"]
+[ext_resource type="Script" uid="uid://464n0e5xkbct" path="res://scripts/conteudo_lista.gd" id="7_v1d1r"]
+[ext_resource type="Script" uid="uid://c1c5vw63tfg5b" path="res://scripts/painel_ficha.gd" id="8_v1d1r"]
+
+[node name="Main" type="Node" unique_id=471212028]
+script = ExtResource("1_v1d1r")
+
+[node name="Node3D" type="Node3D" parent="." unique_id=1059193439]
+
+[node name="Camera3D" type="Camera3D" parent="Node3D" unique_id=1725641440]
+transform = Transform3D(1, 0, 0, 0, 0.70710677, 0.70710677, 0, -0.70710677, 0.70710677, 5, 12, 17)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Node3D" unique_id=465957159]
+transform = Transform3D(0.8660254, -0.38302222, 0.32139382, 0, 0.64278764, 0.76604444, -0.5, -0.66341394, 0.5566704, -50, 30, 0)
+
+[node name="Tabuleiros" parent="." unique_id=2084916303 instance=ExtResource("4_b30p5")]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=900962817]
+
+[node name="UI" type="Control" parent="CanvasLayer" unique_id=1418857061]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="LayoutPrincipal" type="HBoxContainer" parent="CanvasLayer/UI" unique_id=2007369726]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="PainelEsquerdo" type="PanelContainer" parent="CanvasLayer/UI/LayoutPrincipal" unique_id=687705786]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo" unique_id=139380895]
+layout_mode = 2
+
+[node name="ListasPersonagens" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer" unique_id=936442459]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+script = ExtResource("7_v1d1r")
+
+[node name="GRUPO" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=69759471]
+layout_mode = 2
+text = "grupo"
+
+[node name="ContainerGrupo" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=1034122790]
+layout_mode = 2
+
+[node name="INIMIGOS" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=841877881]
+layout_mode = 2
+text = "inimigos"
+
+[node name="ContainerInimigos" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=1005539054]
+layout_mode = 2
+
+[node name="NPCS" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=1306510115]
+layout_mode = 2
+text = "npcs"
+
+[node name="ContainerNpcs" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=806936266]
+layout_mode = 2
+
+[node name="Control" type="Control" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=854770083]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+
+[node name="EspaçoCentral" type="Control" parent="CanvasLayer/UI/LayoutPrincipal" unique_id=615501647]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PainelDireito" type="PanelContainer" parent="CanvasLayer/UI/LayoutPrincipal" unique_id=2084585060]
+custom_minimum_size = Vector2(350, 0)
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito" unique_id=1180224953]
+layout_mode = 2
+
+[node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer" unique_id=235718037]
+layout_mode = 2
+size_flags_vertical = 3
+text = "chat 
+
+Mestre: Kuzin mata simões"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer" unique_id=2039616270]
+layout_mode = 2
+
+[node name="TextEdit" type="TextEdit" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer/HBoxContainer" unique_id=1254170851]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer/HBoxContainer" unique_id=669897487]
+layout_mode = 2
+text = "Enviar"
+
+[node name="PainelFicha" type="Panel" parent="CanvasLayer" unique_id=1272782588]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 0)
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 400.0
+grow_vertical = 2
+script = ExtResource("8_v1d1r")
+
+[node name="BotaoVoltar" type="Button" parent="CanvasLayer/PainelFicha" unique_id=1401151460]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(65, 30)
+layout_mode = 0
+offset_right = 8.0
+offset_bottom = 8.0
+text = "<---"
+
+[node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=578312444]

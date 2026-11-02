@@ -1,18 +1,20 @@
 [gd_scene format=4 uid="uid://bcgf26drh4gpw"]
 
-[ext_resource type="Script" uid="uid://bi6iehveltpnr" path="res://main.gd" id="1_0xm2m"]
-[ext_resource type="Texture2D" uid="uid://yjaepjbuf5jp" path="res://kuzim.png" id="2_0xm2m"]
-[ext_resource type="Texture2D" uid="uid://cx7hyvx0mate" path="res://3c7e4487-5bbc-4e60-811a-ebdc67901841.png" id="2_272bh"]
-[ext_resource type="Texture2D" uid="uid://c4m15fq6molpg" path="res://Captura_de_tela_20260515_000336.png" id="3_5vw27"]
-[ext_resource type="Texture2D" uid="uid://ef0f7l5eqkr6" path="res://plastic_fruit_crate_v1_L1.123c0879fb3e-9ce6-4893-8028-5285a83f8a85/14029_plastic_fruit_crate_diff.jpg" id="3_h2yge"]
-[ext_resource type="Texture2D" uid="uid://t78e1v4xv02a" path="res://c426dbac-f2e8-456a-898f-65680105445c.png" id="4_1bvp3"]
-[ext_resource type="Texture2D" uid="uid://dn2r8mux7j6bb" path="res://elvis ovo.png" id="7_kek77"]
-[ext_resource type="Script" uid="uid://464n0e5xkbct" path="res://conteudo_lista.gd" id="8_4c57u"]
-[ext_resource type="Texture2D" uid="uid://cpd5vstj83uvh" path="res://Gemini_Generated_Image_79oh3g79oh3g79oh-removebg-preview.png" id="8_5vw27"]
+[ext_resource type="Script" uid="uid://bi6iehveltpnr" path="res://scripts/main.gd" id="1_v1d1r"]
+[ext_resource type="Texture2D" uid="uid://cx7hyvx0mate" path="res://texturas/3c7e4487-5bbc-4e60-811a-ebdc67901841.png" id="2_v1d1r"]
+[ext_resource type="Texture2D" uid="uid://yjaepjbuf5jp" path="res://texturas/kuzim.png" id="3_v1d1r"]
+[ext_resource type="Texture2D" uid="uid://ef0f7l5eqkr6" path="res://plastic_fruit_crate_v1_L1.123c0879fb3e-9ce6-4893-8028-5285a83f8a85/14029_plastic_fruit_crate_diff.jpg" id="4_vhipe"]
+[ext_resource type="Texture2D" uid="uid://t78e1v4xv02a" path="res://texturas/c426dbac-f2e8-456a-898f-65680105445c.png" id="5_v1d1r"]
+[ext_resource type="Texture2D" uid="uid://dn2r8mux7j6bb" path="res://texturas/elvis_ovo.png" id="6_v1d1r"]
+[ext_resource type="Script" uid="uid://464n0e5xkbct" path="res://scripts/conteudo_lista.gd" id="7_v1d1r"]
+[ext_resource type="Script" uid="uid://c1c5vw63tfg5b" path="res://scripts/painel_ficha.gd" id="8_v1d1r"]
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_5vw27"]
+load_path = "res://.godot/imported/Captura_de_tela_20260515_000336.png-99dd907ac9b55bd96b6e9f17ff3dc4ce.s3tc.ctex"
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ck46m"]
 resource_name = "_14029_plastic_fruit_crate_v1_L114029_plastic_fruit_crate"
-albedo_texture = ExtResource("3_h2yge")
+albedo_texture = ExtResource("4_vhipe")
 metallic = 0.1242
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_b6kkn"]
@@ -48,28 +50,20 @@ _surfaces = [{
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_b6kkn")
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_272bh"]
-bg_color = Color(0.6, 0.6, 0.6, 0)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0, 0, 0.8, 1)
-
 [node name="Main" type="Node" unique_id=471212028]
-script = ExtResource("1_0xm2m")
+script = ExtResource("1_v1d1r")
 
 [node name="Node3D" type="Node3D" parent="." unique_id=1059193439]
 
 [node name="Sprite3D5" type="Sprite3D" parent="Node3D" unique_id=1326909209]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.934212, -36.695225, 62.711205)
 billboard = 2
-texture = ExtResource("2_272bh")
+texture = ExtResource("2_v1d1r")
 
 [node name="Sprite3D4" type="Sprite3D" parent="Node3D" unique_id=1913850583]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.8603115, -33.118675, 67.99604)
 billboard = 2
-texture = ExtResource("3_5vw27")
+texture = SubResource("CompressedTexture2D_5vw27")
 
 [node name="Camera3D" type="Camera3D" parent="Node3D" unique_id=1725641440]
 transform = Transform3D(-1, 6.1057406e-08, -6.256785e-08, 0, 0.71569276, 0.6984153, 8.742278e-08, 0.6984153, -0.71569276, 0, 45.92495, -20.184963)
@@ -77,7 +71,7 @@ transform = Transform3D(-1, 6.1057406e-08, -6.256785e-08, 0, 0.71569276, 0.69841
 [node name="Sprite3D" type="Sprite3D" parent="Node3D" unique_id=53818627]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -41.616787, 85.399025)
 billboard = 2
-texture = ExtResource("2_0xm2m")
+texture = ExtResource("3_v1d1r")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Node3D" unique_id=453326347]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 3.2155495, -87.93289, 69.92204)
@@ -86,12 +80,12 @@ mesh = SubResource("ArrayMesh_1bvp3")
 [node name="Sprite3D2" type="Sprite3D" parent="Node3D" unique_id=1911150224]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.240501, -39.254173, 83.9951)
 billboard = 2
-texture = ExtResource("4_1bvp3")
+texture = ExtResource("5_v1d1r")
 
 [node name="Sprite3D3" type="Sprite3D" parent="Node3D" unique_id=1765677861]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.218872, -37.15424, 66.37814)
 billboard = 2
-texture = ExtResource("7_kek77")
+texture = ExtResource("6_v1d1r")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=900962817]
 
@@ -117,114 +111,36 @@ metadata/_edit_use_anchors_ = true
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
 
-[node name="MargemEsquerda" type="MarginContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo" unique_id=1163822193]
-visible = false
-layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 10
-
-[node name="FichaDetalhada" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda" unique_id=1912212768]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="Panel" type="Panel" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/FichaDetalhada" unique_id=1331429165]
-custom_minimum_size = Vector2(50, 60)
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="BotaoVoltar" type="Button" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/FichaDetalhada/Panel" unique_id=1165858760]
-unique_name_in_owner = true
-layout_mode = 0
-offset_right = 70.0
-offset_bottom = 31.0
-size_flags_vertical = 3
-text = "<--"
-
-[node name="ListasPersonagens" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda" unique_id=1045024022]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="ArealScroll" type="ScrollContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens" unique_id=1021167875]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="ConteudoLista" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll" unique_id=1355963125]
-layout_mode = 2
-
-[node name="TituloCategoria" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista" unique_id=1708812500]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 0, 1)
-text = "Seu personagem"
-
-[node name="LayoutCard" type="HBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria" unique_id=1862893753]
-layout_mode = 0
-offset_top = 50.0
-offset_right = 250.0
-offset_bottom = 131.0
-
-[node name="TextureRect" type="TextureRect" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria/LayoutCard" unique_id=764728]
-custom_minimum_size = Vector2(60, 50)
-layout_mode = 2
-texture = ExtResource("8_5vw27")
-expand_mode = 1
-
-[node name="InfoPersonagem" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria/LayoutCard" unique_id=1883956227]
-layout_mode = 2
-
-[node name="NomeLabel" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria/LayoutCard/InfoPersonagem" unique_id=834087504]
-layout_mode = 2
-text = "Kuzin"
-
-[node name="ClasseLabel" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria/LayoutCard/InfoPersonagem" unique_id=119252192]
-layout_mode = 2
-text = "Meio-Elfo Ladino"
-
-[node name="BarraVida" type="ProgressBar" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria/LayoutCard/InfoPersonagem" unique_id=1642815563]
-layout_mode = 2
-value = 80.0
-
-[node name="NivelLabel" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria/LayoutCard" unique_id=736289441]
-layout_mode = 2
-text = "Nível 3"
-
-[node name="CardKaelen" type="Button" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/ListasPersonagens/ArealScroll/ConteudoLista/TituloCategoria" unique_id=2050243716]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 60)
-layout_mode = 0
-offset_left = 1.0
-offset_top = 48.0
-offset_right = 271.0
-offset_bottom = 148.0
-theme_override_styles/normal = SubResource("StyleBoxFlat_272bh")
-
 [node name="ScrollContainer" type="ScrollContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo" unique_id=139380895]
 layout_mode = 2
 
-[node name="ConteudoLista" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer" unique_id=936442459]
+[node name="ListasPersonagens" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer" unique_id=936442459]
+custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
-script = ExtResource("8_4c57u")
+script = ExtResource("7_v1d1r")
 
-[node name="GRUPO" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=69759471]
+[node name="GRUPO" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=69759471]
 layout_mode = 2
+text = "grupo"
 
-[node name="ContainerGrupo" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=1034122790]
-layout_mode = 2
-
-[node name="INIMIGOS" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=841877881]
-layout_mode = 2
-
-[node name="ContainerInimigos" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=1005539054]
+[node name="ContainerGrupo" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=1034122790]
 layout_mode = 2
 
-[node name="NPCS" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=1306510115]
+[node name="INIMIGOS" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=841877881]
+layout_mode = 2
+text = "inimigos"
+
+[node name="ContainerInimigos" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=1005539054]
 layout_mode = 2
 
-[node name="ContainerNpcs" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=806936266]
+[node name="NPCS" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=1306510115]
+layout_mode = 2
+text = "npcs"
+
+[node name="ContainerNpcs" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=806936266]
 layout_mode = 2
 
-[node name="Control" type="Control" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ConteudoLista" unique_id=854770083]
+[node name="Control" type="Control" parent="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/ScrollContainer/ListasPersonagens" unique_id=854770083]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 
@@ -257,6 +173,21 @@ size_flags_horizontal = 3
 layout_mode = 2
 text = "Enviar"
 
-[node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=578312444]
+[node name="PainelFicha" type="Panel" parent="CanvasLayer" unique_id=1272782588]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 0)
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 400.0
+grow_vertical = 2
+script = ExtResource("8_v1d1r")
 
-[connection signal="pressed" from="CanvasLayer/UI/LayoutPrincipal/PainelEsquerdo/MargemEsquerda/FichaDetalhada/Panel/BotaoVoltar" to="." method="_on_botão_voltar_pressed"]
+[node name="BotaoVoltar" type="Button" parent="CanvasLayer/PainelFicha" unique_id=1401151460]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(65, 30)
+layout_mode = 0
+offset_right = 8.0
+offset_bottom = 8.0
+text = "<---"
+
+[node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=578312444]

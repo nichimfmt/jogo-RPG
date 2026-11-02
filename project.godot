@@ -13,7 +13,7 @@ config_version=5
 config/name="JogoDoAno"
 run/main_scene="uid://bcgf26drh4gpw"
 config/features=PackedStringArray("4.7", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://texturas/icon.svg"
 
 [display]
 

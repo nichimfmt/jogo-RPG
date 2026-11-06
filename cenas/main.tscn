@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://bcgf26drh4gpw"]
 
 [ext_resource type="Script" uid="uid://bi6iehveltpnr" path="res://scripts/main.gd" id="1_v1d1r"]
+[ext_resource type="Script" uid="uid://76scunapfhjo" path="res://scripts/painel_direito.gd" id="4_5wwvk"]
 [ext_resource type="PackedScene" uid="uid://c6hiqpa7lgoc4" path="res://cenas/Tabuleiros.tscn" id="4_b30p5"]
 [ext_resource type="Script" uid="uid://464n0e5xkbct" path="res://scripts/conteudo_lista.gd" id="7_v1d1r"]
 [ext_resource type="Script" uid="uid://c1c5vw63tfg5b" path="res://scripts/painel_ficha.gd" id="8_v1d1r"]
@@ -82,6 +83,7 @@ size_flags_horizontal = 3
 [node name="PainelDireito" type="PanelContainer" parent="CanvasLayer/UI/LayoutPrincipal" unique_id=2084585060]
 custom_minimum_size = Vector2(350, 0)
 layout_mode = 2
+script = ExtResource("4_5wwvk")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito" unique_id=1180224953]
 layout_mode = 2
@@ -95,8 +97,10 @@ Mestre: Kuzin mata simões"
 
 [node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer" unique_id=2039616270]
 layout_mode = 2
+size_flags_vertical = 3
 
 [node name="TextEdit" type="TextEdit" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer/HBoxContainer" unique_id=1254170851]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 

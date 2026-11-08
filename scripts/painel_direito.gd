@@ -86,15 +86,28 @@ func _on_enviar() -> void:
 
 	if texto == "/nova":
 		_mestre.nova_campanha()
+		var tab_nova: Node = get_tree().get_first_node_in_group("tabuleiro")
+		if tab_nova != null:
+			tab_nova.apagar_mundo()          # esquece o jogo salvo (o tabuleiro volta ao início ao apertar F9)
 		chat_historico.clear()
 		_msg("Sistema", "Nova campanha. (Aperte F9 para reiniciar também o tabuleiro.)")
 		_mestre.iniciar_aventura()
+		return
+	if texto == "/diario":
+		var tab_d: Node = get_tree().get_first_node_in_group("tabuleiro")
+		if tab_d != null:
+			_msg("Diário", tab_d.mundo.diario_completo())
+		return
+	if texto.begins_with("/npc "):
+		var tab_n: Node = get_tree().get_first_node_in_group("tabuleiro")
+		if tab_n != null:
+			_msg("Ficha", tab_n.descrever_npc(texto.substr(5).strip_edges()))
 		return
 	if texto == "/onde":
 		_mostrar_cena()
 		return
 	if texto == "/ajuda":
-		_msg("Sistema", "Comandos: /onde (resumo da cena), /notas (notas da IA), /nova (nova campanha). Enter envia, Shift+Enter pula linha. Esc ou clicar fora solta o chat.")
+		_msg("Sistema", "Comandos: /onde (resumo da cena), /diario (o que já aconteceu), /npc Nome (ficha de conhecimento), /notas (notas da IA), /nova (nova campanha). Enter envia, Shift+Enter pula linha. Esc ou clicar fora solta o chat.")
 		return
 	if texto == "/notas":
 		var tab: Node = get_tree().get_first_node_in_group("tabuleiro")

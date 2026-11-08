@@ -15,6 +15,8 @@ extends Node3D
 
 const IATatica = preload("res://scripts/ia_tatica.gd")
 const Regras = preload("res://scripts/regras.gd")
+const Gerador = preload("res://scripts/gerador_cenas.gd")
+const Mundo = preload("res://scripts/mundo.gd")
 
 # Sinais: o painel de chat escuta o "log_de_combate" para mostrar o que aconteceu
 signal log_de_combate(texto: String)
@@ -68,7 +70,7 @@ const CRIAR_CENARIO_DE_TESTE: bool = true
 const ORIGEM_CENARIO: Vector2i = Vector2i(10, 8)   # onde o cenário de teste começa no mapa grande
 const USAR_MESTRE_IA: bool = true                    # false = NPCs agem sem narração do Mestre
 const MAX_NPCS: int = 12
-const MAX_OBJETOS: int = 160
+const MAX_OBJETOS: int = 600
 const ALCANCE_OBJETO: int = 8                        # até onde o Mestre pode "jogar" um objeto
 
 # ---------------------------------------------------------------
@@ -124,6 +126,10 @@ const CATALOGO_OBJETOS: Dictionary = {
 	"mesa": {"forma": "caixa", "tamanho": Vector3(1.3, 0.8, 1.3), "cor": Color(0.5, 0.33, 0.16), "bloqueia": true, "item": false, "movel": true, "estados": ["normal", "quebrado"]},
 	"balcao": {"forma": "caixa", "tamanho": Vector3(1.9, 1.0, 1.1), "cor": Color(0.38, 0.24, 0.12), "bloqueia": true, "item": false, "movel": false, "estados": ["normal", "quebrado"]},
 	"cadeira": {"forma": "caixa", "tamanho": Vector3(0.6, 0.9, 0.6), "cor": Color(0.6, 0.4, 0.2), "bloqueia": false, "item": false, "movel": true, "estados": ["normal", "quebrado"]},
+	"alcapao": {"forma": "caixa", "tamanho": Vector3(1.4, 0.1, 1.4), "cor": Color(0.25, 0.15, 0.08), "bloqueia": false, "item": false, "movel": false, "estados": ["fechado", "aberto"]},
+	"cama": {"forma": "caixa", "tamanho": Vector3(1.1, 0.6, 1.8), "cor": Color(0.72, 0.3, 0.3), "bloqueia": true, "item": false, "movel": false, "estados": ["normal", "quebrado"]},
+	"banco": {"forma": "caixa", "tamanho": Vector3(1.6, 0.5, 0.6), "cor": Color(0.55, 0.4, 0.22), "bloqueia": false, "item": false, "movel": true, "estados": ["normal", "quebrado"]},
+	"altar": {"forma": "caixa", "tamanho": Vector3(1.6, 1.0, 1.0), "cor": Color(0.8, 0.8, 0.85), "bloqueia": true, "item": false, "movel": false, "estados": ["normal", "quebrado"]},
 	"arvore": {"forma": "cilindro", "tamanho": Vector3(1.2, 3.0, 1.2), "cor": Color(0.15, 0.5, 0.2), "bloqueia": true, "item": false, "movel": false, "estados": ["normal", "destruido"]},
 	"pedra": {"forma": "esfera", "tamanho": Vector3(1.5, 1.2, 1.5), "cor": Color(0.5, 0.5, 0.52), "bloqueia": true, "item": false, "movel": false, "estados": ["normal"]},
 	"muro": {"forma": "caixa", "tamanho": Vector3(1.95, 1.6, 1.95), "cor": Color(0.42, 0.42, 0.45), "bloqueia": true, "item": false, "movel": false, "estados": ["normal", "destruido"]},
@@ -189,6 +195,11 @@ var fim_de_jogo: bool = false
 var turno_em_andamento: bool = false
 # MODO DE JOGO (igual à mesa): "exploracao" = conversa com o Mestre, sem turnos;
 # "combate" = ordem de iniciativa, cada um age no seu turno.
+var mundo = Mundo.new()                     # propriedades dos itens, fichas de conhecimento e diário
+var _registro_ativo: bool = false           # só registra no diário depois que o cenário inicial está pronto
+var _gerando: bool = false                  # true enquanto o gerador monta uma construção inteira
+var _carregando: bool = false               # true enquanto o jogo salvo está sendo restaurado
+var _construindo: bool = false              # true enquanto uma construção monta paredes/portas (não vira evento)
 var modo: String = "exploracao"
 var ordem_iniciativa: Array = []            # nomes, do mais rápido ao mais lento
 var ator_atual: String = ""
@@ -247,6 +258,9 @@ func _ready() -> void:
 
 	if CRIAR_CENARIO_DE_TESTE:
 		_montar_cenario_de_teste()
+
+	carregar_mundo()            # se existe um jogo salvo, continua de onde parou
+	_registro_ativo = true
 
 	if celula_jogador != CELULA_INVALIDA:
 		cursor_celula = celula_jogador
@@ -317,12 +331,35 @@ func _montar_cenario_de_teste() -> void:
 # CONSTRUÇÕES (LEGO): vários blocos de parede em volta + porta + piso por dentro
 # ---------------------------------------------------------------
 # canto = célula do canto noroeste (esquerda/cima). lado_porta = norte | sul | leste | oeste
-func construir_predio(nome: String, modelo: String, canto: Vector2i, largura: int, profundidade: int, lado_porta: String = "sul") -> bool:
+const LADO_OPOSTO: Dictionary = {"norte": "sul", "sul": "norte", "leste": "oeste", "oeste": "leste"}
+
+
+# Célula da porta (no meio da parede) e a célula de fora dela
+func _porta_do_lado(x0: int, z0: int, x1: int, z1: int, lado: String) -> Dictionary:
+	var larg: int = x1 - x0 + 1
+	var prof: int = z1 - z0 + 1
+	match lado:
+		"norte":
+			var c := Vector2i(x0 + larg / 2, z0)
+			return {"celula": c, "fora": c + Vector2i(0, -1), "dentro": c + Vector2i(0, 1)}
+		"leste":
+			var c2 := Vector2i(x1, z0 + prof / 2)
+			return {"celula": c2, "fora": c2 + Vector2i(1, 0), "dentro": c2 + Vector2i(-1, 0)}
+		"oeste":
+			var c3 := Vector2i(x0, z0 + prof / 2)
+			return {"celula": c3, "fora": c3 + Vector2i(-1, 0), "dentro": c3 + Vector2i(1, 0)}
+	var c4 := Vector2i(x0 + larg / 2, z1)
+	return {"celula": c4, "fora": c4 + Vector2i(0, 1), "dentro": c4 + Vector2i(0, -1)}
+
+
+# canto = célula do canto noroeste (esquerda/cima). lado_porta = porta da FRENTE (norte|sul|leste|oeste).
+# portas_extras = outros lados que também têm porta (o lado oposto à frente vira "porta dos fundos").
+func construir_predio(nome: String, modelo: String, canto: Vector2i, largura: int, profundidade: int, lado_porta: String = "sul", portas_extras: Array = []) -> bool:
 	if not CATALOGO_PREDIOS.has(modelo):
 		_falhar("Construção desconhecida: %s. Use: %s." % [modelo, ", ".join(CATALOGO_PREDIOS.keys())])
 		return false
-	if largura < 3 or profundidade < 3 or largura > 12 or profundidade > 12:
-		_falhar("Tamanho inválido: a construção precisa ter de 3 a 12 células de largura e de profundidade.")
+	if largura < 3 or profundidade < 3 or largura > 16 or profundidade > 16:
+		_falhar("Tamanho inválido: a construção precisa ter de 3 a 16 células de largura e de profundidade.")
 		return false
 	var x0: int = canto.x
 	var z0: int = canto.y
@@ -332,22 +369,22 @@ func construir_predio(nome: String, modelo: String, canto: Vector2i, largura: in
 		_falhar("A construção não cabe no tabuleiro (x de 0 a %d, z de 0 a %d)." % [largura_tabuleiro - 1, profundidade_tabuleiro - 1])
 		return false
 
-	var porta: Vector2i
-	var fora: Vector2i
-	match lado_porta:
-		"norte":
-			porta = Vector2i(x0 + largura / 2, z0)
-			fora = porta + Vector2i(0, -1)
-		"leste":
-			porta = Vector2i(x1, z0 + profundidade / 2)
-			fora = porta + Vector2i(1, 0)
-		"oeste":
-			porta = Vector2i(x0, z0 + profundidade / 2)
-			fora = porta + Vector2i(-1, 0)
-		_:
-			lado_porta = "sul"
-			porta = Vector2i(x0 + largura / 2, z1)
-			fora = porta + Vector2i(0, 1)
+	if not LADO_OPOSTO.has(lado_porta):
+		lado_porta = "sul"
+	# Lista de portas: frente + extras (sem repetir lado)
+	var portas: Array = []
+	var lados_usados: Array = []
+	var todos: Array = [lado_porta]
+	for l in portas_extras:
+		if LADO_OPOSTO.has(str(l)) and not todos.has(str(l)):
+			todos.append(str(l))
+	for l in todos:
+		var info: Dictionary = _porta_do_lado(x0, z0, x1, z1, str(l))
+		var rotulo: String = "porta da frente"
+		if str(l) != lado_porta:
+			rotulo = "porta dos fundos" if str(l) == str(LADO_OPOSTO[lado_porta]) else "porta lateral"
+		portas.append({"lado": str(l), "celula": info["celula"], "fora": info["fora"], "dentro": info["dentro"], "rotulo": rotulo})
+		lados_usados.append(info["celula"])
 
 	var paredes: Array = []
 	for x in range(x0, x1 + 1):
@@ -356,12 +393,12 @@ func construir_predio(nome: String, modelo: String, canto: Vector2i, largura: in
 			if not borda:
 				continue
 			var c := Vector2i(x, z)
-			if c != porta:
+			if not lados_usados.has(c):
 				paredes.append(c)
 			if celula_ocupada(c) or eh_obstaculo(c) or not _objetos_na_celula(c).is_empty():
 				_falhar("O lugar da construção está ocupado em (%d,%d)." % [x, z])
 				return false
-	if objetos.size() + paredes.size() + 1 > MAX_OBJETOS:
+	if objetos.size() + paredes.size() + portas.size() > MAX_OBJETOS:
 		_falhar("Objetos demais no tabuleiro para construir isto.")
 		return false
 
@@ -374,15 +411,18 @@ func construir_predio(nome: String, modelo: String, canto: Vector2i, largura: in
 
 	var cores: Dictionary = CATALOGO_PREDIOS[modelo]
 	var extras: Array = []
+	_construindo = true
 	for c in paredes:
-		var nome_parede: String = "Parede de " + nome_final
-		if criar_objeto(nome_parede, "parede", c):
+		if criar_objeto("Parede de " + nome_final, "parede", c):
 			var obj: Dictionary = objetos[_nome_criado_por_ultimo]
 			(obj["no"] as Node3D).get_meta("material").albedo_color = cores["parede"]
 			obj["predio"] = nome_final
-	if criar_objeto("Porta de " + nome_final, "porta", porta):
-		mudar_estado(_nome_criado_por_ultimo, "aberto")
-		objetos[_nome_criado_por_ultimo]["predio"] = nome_final
+	for porta in portas:
+		var nome_porta: String = ("Porta dos fundos de " if str(porta["rotulo"]) == "porta dos fundos" else "Porta de ") + nome_final
+		if criar_objeto(nome_porta, "porta", porta["celula"]):
+			mudar_estado(_nome_criado_por_ultimo, "aberto")
+			objetos[_nome_criado_por_ultimo]["predio"] = nome_final
+	_construindo = false
 
 	# Piso por dentro
 	for x in range(x0 + 1, x1):
@@ -411,11 +451,33 @@ func construir_predio(nome: String, modelo: String, canto: Vector2i, largura: in
 	titulo.position = _celula_para_posicao(Vector2i((x0 + x1) / 2, (z0 + z1) / 2), 3.4)
 	extras.append(titulo)
 
+	var porta_principal: Dictionary = portas[0]
 	predios[nome_final] = {"nome": nome_final, "modelo": modelo, "x0": x0, "z0": z0, "x1": x1, "z1": z1,
-		"porta": porta, "fora": fora, "lado_porta": lado_porta, "extras": extras}
+		"porta": porta_principal["celula"], "fora": porta_principal["fora"], "lado_porta": lado_porta,
+		"portas": portas, "recursos": [], "alturas": [], "extras": extras}
 	_recalcular_obstaculos()
 	_atualizar_destaques()
+	_ultimo_predio = nome_final
 	print("Construção '", nome_final, "' (", modelo, ") em ", canto, " ", largura, "x", profundidade)
+	return true
+
+
+# Apaga uma construção inteira (paredes, porta, móveis, piso e alturas que ela criou)
+func demolir_predio(nome: String) -> bool:
+	if not predios.has(nome):
+		return false
+	var p: Dictionary = predios[nome]
+	for n in objetos.keys():
+		if str(objetos[n].get("predio", "")) == nome:
+			remover_objeto(str(n))
+	for e in p["extras"]:
+		if is_instance_valid(e):
+			e.queue_free()
+	for c in p["alturas"]:
+		definir_altura(c, 0)
+	predios.erase(nome)
+	_recalcular_obstaculos()
+	_atualizar_destaques()
 	return true
 
 
@@ -425,8 +487,9 @@ func predio_em(celula: Vector2i) -> String:
 		var p: Dictionary = predios[nome]
 		if celula.x > int(p["x0"]) and celula.x < int(p["x1"]) and celula.y > int(p["z0"]) and celula.y < int(p["z1"]):
 			return str(nome)
-		if celula == p["porta"]:
-			return str(nome)
+		for porta in p["portas"]:
+			if celula == porta["celula"]:
+				return str(nome)
 	return ""
 
 
@@ -804,6 +867,7 @@ func colocar_personagem(celula: Vector2i, nome: String, modelo: String = "goblin
 	ficha["historico"] = []
 	ficha["atividade"] = ""
 	ficha["iniciativa"] = 2
+	ficha["conhecimento"] = mundo.conhecimento_inicial(str(ficha["nome"]), str(ficha["lado"]))
 
 	var peca: Node3D = CENA_PERSONAGEM.instantiate()
 	add_child(peca)
@@ -888,6 +952,8 @@ func mover_peca(origem: Vector2i, destino: Vector2i, caminho: Array = []) -> boo
 	else:
 		for c in caminho:
 			animacao.tween_property(peca, "position", _pos_peca(c), 0.12)
+	if modo == "exploracao":
+		salvar_mundo()
 	return true
 
 
@@ -1151,8 +1217,10 @@ func _morrer(celula: Vector2i) -> void:
 	var nome: String = str(ficha.get("nome", "?"))
 	var era_jogador: bool = str(ficha.get("lado", "")) == "jogador"
 	_log("%s caiu!" % nome)
+	registrar_evento("morte", "%s morreu." % nome)
 	remover_peca(celula)
 	if era_jogador:
+		apagar_mundo()
 		fim_de_jogo = true
 		_mostrar_aviso("%s foi derrotado. Fim de jogo (F9 reinicia)." % nome)
 	elif _contar_lado("inimigo") == 0:
@@ -1298,7 +1366,21 @@ func _mestre() -> Node:
 # ---------------------------------------------------------------
 # COMBATE POR INICIATIVA (igual à mesa de RPG)
 # ---------------------------------------------------------------
-func iniciar_combate() -> bool:
+const RAIO_DE_AMEACA: int = 8     # o Mestre só pode iniciar combate se algum inimigo estiver a esta distância do Kuzin
+
+
+func _inimigo_proximo(raio: int) -> bool:
+	if celula_jogador == CELULA_INVALIDA:
+		return false
+	var minha: Dictionary = ficha_em(celula_jogador)
+	for c in pecas.keys():
+		if sao_hostis(minha, ficha_em(c)) and distancia(celula_jogador, c) <= raio:
+			return true
+	return false
+
+
+# motivo = o que desencadeou a luta (aparece no log). origem = "mestre" aplica as travas de coerência.
+func iniciar_combate(motivo: String = "", origem: String = "jogo") -> bool:
 	if modo == "combate":
 		_falhar("O combate já começou.")
 		return false
@@ -1308,6 +1390,13 @@ func iniciar_combate() -> bool:
 	if _contar_lado("inimigo") == 0:
 		_falhar("Não há inimigos no tabuleiro para lutar.")
 		return false
+	if origem == "mestre":
+		if motivo.strip_edges() == "":
+			_falhar("Para iniciar combate você precisa informar o MOTIVO no campo 'texto' (o que desencadeou a luta).")
+			return false
+		if not _inimigo_proximo(RAIO_DE_AMEACA):
+			_falhar("Nenhum inimigo está a %d células ou menos de Kuzin: ninguém o ameaça ainda. Aproxime os inimigos (mover) ou narre o perigo sem iniciar combate." % RAIO_DE_AMEACA)
+			return false
 
 	# Rola iniciativa: d20 + modificador
 	var rolagens: Array = []
@@ -1325,7 +1414,8 @@ func iniciar_combate() -> bool:
 	modo = "combate"
 	rodada = 1
 	_limpar_debug()
-	_log("COMBATE! Iniciativa: " + ", ".join(partes) + ".")
+	_log("COMBATE! " + ("Motivo: " + motivo.strip_edges() + ". " if motivo.strip_edges() != "" else "") + "Iniciativa: " + ", ".join(partes) + ".")
+	registrar_evento("combate", "Combate começou. " + ("Motivo: " + motivo.strip_edges() + "." if motivo.strip_edges() != "" else ""))
 	_atualizar_destaques()
 	_atualizar_interface()
 	_loop_de_combate()          # roda "em segundo plano" (é uma corrotina)
@@ -1341,6 +1431,7 @@ func encerrar_combate() -> bool:
 	turno_atual = Turno.JOGADOR
 	turno_em_andamento = false
 	_log("O combate terminou.")
+	registrar_evento("combate", "O combate terminou.")
 	jogador_encerrou.emit()      # acorda o laço caso ele esteja esperando o jogador
 	_atualizar_destaques()
 	_atualizar_interface()
@@ -1711,6 +1802,7 @@ func dar_item(nome_objeto: String, nome_personagem: String) -> bool:
 	var ficha: Dictionary = ficha_em(cel)
 	obj["dono"] = str(ficha["nome"])
 	(ficha["inventario"] as Array).append(nome_objeto)
+	registrar_evento("item", "%s pegou %s." % [str(ficha["nome"]), nome_objeto])
 	_recalcular_obstaculos()
 	_atualizar_interface()
 	return true
@@ -1730,6 +1822,7 @@ func soltar_item(nome_objeto: String) -> bool:
 		_falhar("Não achei quem carrega '%s'." % nome_objeto)
 		return false
 	_largar(nome_objeto, cel)
+	registrar_evento("item", "%s largou %s." % [dono, nome_objeto])
 	_atualizar_interface()
 	return true
 
@@ -1763,7 +1856,11 @@ func mudar_estado(nome_objeto: String, estado: String) -> bool:
 	if estado == "fechado" and bool(dados["bloqueia"]) and celula_ocupada(obj["celula"]):
 		_falhar("Tem alguém na frente; não dá para fechar.")
 		return false
+	if estado == "aberto" and bool(obj.get("trancado", false)):
+		_falhar("'%s' está trancado; é preciso destrancar ou arrombar." % nome_objeto)
+		return false
 	obj["estado"] = estado
+	registrar_evento("objeto", "%s agora está %s." % [nome_objeto, estado])
 	_posicionar_objeto(obj)
 	_aplicar_estado_visual(obj)
 	_recalcular_obstaculos()
@@ -1809,6 +1906,7 @@ func remover_objeto(nome_objeto: String) -> bool:
 #   {"acao":"definir_altura", "x":3, "z":3, "nivel":2}
 var ultimo_motivo: String = ""
 var _nome_criado_por_ultimo: String = ""
+var _ultimo_predio: String = ""
 
 
 func _falhar(motivo: String) -> void:
@@ -1857,6 +1955,7 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 				return "FALHOU: papel inválido '%s' (use aliado, inimigo ou neutro)." % lado
 			resultado = colocar_personagem(Vector2i(x, z), alvo if alvo != "" else modelo.capitalize(), modelo, lado)
 			if resultado:
+				registrar_evento("cena", "%s apareceu na cena (%s)." % [alvo, lado if lado != "" else "criatura"])
 				return "OK: %s apareceu em (%d,%d)." % [alvo, x, z]
 		"remover":
 			var cel: Vector2i = _achar_por_nome(alvo)
@@ -1867,6 +1966,7 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			var nome_removido: String = str(ficha_em(cel)["nome"])
 			resultado = remover_peca(cel)
 			if resultado:
+				registrar_evento("cena", "%s saiu de cena." % nome_removido)
 				return "OK: %s saiu de cena." % nome_removido
 		"intencao":
 			var c2: Vector2i = _achar_por_nome(alvo)
@@ -1920,16 +2020,31 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 				return "FALHOU: não existe o objeto '%s'. %s" % [alvo, _lista_de_objetos()]
 			resultado = remover_objeto(nome_obj5)
 			if resultado:
+				registrar_evento("objeto", "%s foi removido do mundo." % nome_obj5)
 				return "OK: '%s' foi removido." % nome_obj5
 		"construir":
 			var lado: String = str(comando.get("lado", "sul")).to_lower()
 			resultado = construir_predio(alvo, modelo, Vector2i(x, z), int(comando.get("largura", 5)), int(comando.get("profundidade", 4)), lado)
 			if resultado:
 				return "OK: '%s' construída; interior livre para mover personagens e colocar móveis." % alvo
+		"gerar_construcao":
+			var referencia: Vector2i = _resolver_referencia(para)
+			var lista_extras: Array = []
+			for e in comando.get("extras", []):
+				lista_extras.append(str(e))
+			var tamanho: String = str(comando.get("tamanho", "medio")).to_lower()
+			_gerando = true              # móveis, tochas e portas da construção não viram eventos do diário
+			var r: Dictionary = Gerador.gerar_predio(self, modelo, alvo, referencia, tamanho, lista_extras, randi())
+			_gerando = false
+			if bool(r["ok"]):
+				registrar_evento("construcao", "Surgiu a construção %s (%s)." % [alvo, modelo])
+				return "OK: " + str(r["resumo"])
+			return "FALHOU: " + str(r["motivo"])
 		"iniciar_combate":
-			resultado = iniciar_combate()
+			var motivo_combate: String = str(comando.get("texto", "")).strip_edges()
+			resultado = iniciar_combate(motivo_combate, "mestre")
 			if resultado:
-				return "OK: combate iniciado (ordem de iniciativa definida)."
+				return "OK: combate iniciado. Motivo: %s. Ordem de iniciativa definida." % motivo_combate
 		"encerrar_combate":
 			resultado = encerrar_combate()
 			if resultado:
@@ -1950,6 +2065,206 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 	return "FALHOU: %s" % (ultimo_motivo if ultimo_motivo != "" else "não foi possível.")
 
 
+# ===============================================================
+# MUNDO: diário, propriedades dos itens, conhecimento dos NPCs, salvamento
+# ===============================================================
+func registrar_evento(tipo: String, texto: String) -> void:
+	if not _registro_ativo or _construindo or _gerando:
+		return
+	mundo.registrar(tipo, texto)
+	salvar_mundo()
+
+
+# O que dá para fazer com um objeto (alimenta o menu de clique da etapa 2)
+func verbos_do_objeto(nome_objeto: String) -> Array:
+	if not objetos.has(nome_objeto):
+		return []
+	var obj: Dictionary = objetos[nome_objeto]
+	var dados: Dictionary = CATALOGO_OBJETOS[str(obj["modelo"])]
+	return mundo.verbos_de(str(obj["modelo"]), str(obj["estado"]), bool(obj.get("trancado", false)), dados)
+
+
+func propriedades_do_objeto(nome_objeto: String) -> Dictionary:
+	if not objetos.has(nome_objeto):
+		return {}
+	var obj: Dictionary = objetos[nome_objeto]
+	return mundo.propriedades_de(str(obj["modelo"]), CATALOGO_OBJETOS[str(obj["modelo"])])
+
+
+func trancar_objeto(nome_objeto: String, trancado: bool) -> bool:
+	if not objetos.has(nome_objeto):
+		_falhar("Não existe o objeto '%s'." % nome_objeto)
+		return false
+	var obj: Dictionary = objetos[nome_objeto]
+	if not bool(propriedades_do_objeto(nome_objeto)["pode_trancar"]):
+		_falhar("'%s' não tem tranca." % nome_objeto)
+		return false
+	if trancado and str(obj["estado"]) != "fechado":
+		_falhar("'%s' precisa estar fechado para ser trancado." % nome_objeto)
+		return false
+	obj["trancado"] = trancado
+	registrar_evento("objeto", "%s foi %s." % [nome_objeto, "trancado" if trancado else "destrancado"])
+	return true
+
+
+func descrever_npc(nome: String) -> String:
+	var cel: Vector2i = _achar_por_nome(nome)
+	if cel == CELULA_INVALIDA:
+		return "Não existe ninguém chamado '%s'." % nome
+	return mundo.descrever_npc(str(ficha_em(cel)["nome"]), ficha_em(cel))
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		salvar_mundo()
+
+
+func apagar_mundo() -> void:
+	if FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Mundo.ARQUIVO_MUNDO))
+
+
+func salvar_mundo() -> void:
+	if not _registro_ativo or _carregando or celula_jogador == CELULA_INVALIDA or fim_de_jogo:
+		return
+	var pers: Array = []
+	for c in pecas.keys():
+		var f: Dictionary = ficha_em(c)
+		pers.append({"nome": str(f["nome"]), "modelo": str(f["modelo"]), "lado": str(f["lado"]), "classe": str(f["classe"]),
+			"celula": c, "pv": int(f["pv"]), "intencao": str(f["intencao"]), "atividade": str(f.get("atividade", "")),
+			"conhecimento": (f.get("conhecimento", {}) as Dictionary).duplicate(true)})
+	var objs: Array = []
+	for n in objetos.keys():
+		var o: Dictionary = objetos[n]
+		objs.append({"nome": str(n), "modelo": str(o["modelo"]), "celula": o["celula"], "estado": str(o["estado"]),
+			"dono": str(o["dono"]), "trancado": bool(o.get("trancado", false)), "predio": str(o.get("predio", ""))})
+	var preds: Array = []
+	for n in predios.keys():
+		var p: Dictionary = predios[n]
+		var lados_extras: Array = []
+		for i in range(1, (p["portas"] as Array).size()):
+			lados_extras.append(str(p["portas"][i]["lado"]))
+		preds.append({"nome": str(n), "modelo": str(p["modelo"]), "canto": Vector2i(int(p["x0"]), int(p["z0"])),
+			"largura": int(p["x1"]) - int(p["x0"]) + 1, "profundidade": int(p["z1"]) - int(p["z0"]) + 1,
+			"lado_porta": str(p["lado_porta"]), "extras": lados_extras, "recursos": (p["recursos"] as Array).duplicate()})
+	var dados: Dictionary = {"versao": 1, "mundo": mundo.para_salvar(), "personagens": pers, "objetos": objs,
+		"predios": preds, "alturas": alturas.duplicate()}
+	var f := FileAccess.open(Mundo.ARQUIVO_MUNDO, FileAccess.WRITE)
+	if f != null:
+		f.store_string(var_to_str(dados))
+
+
+# Reconstrói o estado salvo POR CIMA do cenário inicial já montado
+func carregar_mundo() -> void:
+	if not FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
+		return
+	var dados: Variant = str_to_var(FileAccess.get_file_as_string(Mundo.ARQUIVO_MUNDO))
+	if not (dados is Dictionary) or int(dados.get("versao", 0)) != 1:
+		return
+	_carregando = true
+
+	# 1) construções
+	var salvos_pred: Dictionary = {}
+	for p in dados.get("predios", []):
+		salvos_pred[str(p["nome"])] = p
+	for n in predios.keys():
+		if not salvos_pred.has(n):
+			demolir_predio(str(n))
+	for n in salvos_pred.keys():
+		if not predios.has(n):
+			var sp: Dictionary = salvos_pred[n]
+			construir_predio(str(n), str(sp["modelo"]), sp["canto"], int(sp["largura"]), int(sp["profundidade"]), str(sp["lado_porta"]), sp["extras"])
+		if predios.has(n):
+			predios[n]["recursos"] = (salvos_pred[n]["recursos"] as Array).duplicate()
+
+	# 2) alturas do terreno
+	var salvas_alt: Dictionary = dados.get("alturas", {})
+	for c in alturas.keys():
+		if not salvas_alt.has(c):
+			definir_altura(c, 0)
+	for c in salvas_alt.keys():
+		if int(alturas.get(c, 0)) != int(salvas_alt[c]):
+			definir_altura(c, int(salvas_alt[c]))
+
+	# 3) objetos que não existem mais
+	var salvos_obj: Dictionary = {}
+	for o in dados.get("objetos", []):
+		salvos_obj[str(o["nome"])] = o
+	for n in objetos.keys():
+		if not salvos_obj.has(n):
+			remover_objeto(str(n))
+
+	# 4) personagens: reposiciona os que existem, remove os que morreram, cria os novos
+	var salvos_pers: Dictionary = {}
+	for pr in dados.get("personagens", []):
+		salvos_pers[str(pr["nome"])] = pr
+	var existentes: Dictionary = {}
+	for c in pecas.keys():
+		existentes[str(ficha_em(c)["nome"])] = pecas[c]
+	pecas.clear()
+	for nome in existentes.keys():
+		var peca: Node3D = existentes[nome]
+		if not salvos_pers.has(nome):
+			peca.queue_free()
+			continue
+		var sv: Dictionary = salvos_pers[nome]
+		pecas[sv["celula"]] = peca
+		peca.position = _pos_peca(sv["celula"])
+		_aplicar_ficha_salva(peca.get_meta("ficha"), sv)
+		_atualizar_etiqueta(peca)
+		if str(sv["lado"]) == "jogador":
+			celula_jogador = sv["celula"]
+	for nome in salvos_pers.keys():
+		if existentes.has(nome):
+			continue
+		var sv2: Dictionary = salvos_pers[nome]
+		if colocar_personagem(sv2["celula"], str(nome), str(sv2["modelo"]), str(sv2["lado"]), str(sv2["classe"])):
+			var ce: Vector2i = sv2["celula"]
+			_aplicar_ficha_salva(ficha_em(ce), sv2)
+			_atualizar_etiqueta(pecas[ce])
+	for c in pecas.keys():
+		(ficha_em(c)["inventario"] as Array).clear()
+
+	# 5) objetos: cria os novos e aplica posição, estado, dono
+	for n in salvos_obj.keys():
+		var so: Dictionary = salvos_obj[n]
+		if not objetos.has(n):
+			if not criar_objeto(str(n), str(so["modelo"]), so["celula"]):
+				continue
+		var obj: Dictionary = objetos[n]
+		obj["celula"] = so["celula"]
+		obj["trancado"] = bool(so.get("trancado", false))
+		if str(so.get("predio", "")) != "":
+			obj["predio"] = str(so["predio"])
+		obj["estado"] = str(so["estado"])
+		obj["dono"] = ""
+		var dono: String = str(so["dono"])
+		if dono != "":
+			var dc: Vector2i = _achar_exato(dono)
+			if dc != CELULA_INVALIDA:
+				obj["dono"] = dono
+				(ficha_em(dc)["inventario"] as Array).append(str(n))
+		_posicionar_objeto(obj)
+		_aplicar_estado_visual(obj)
+
+	mundo.carregar_de(dados.get("mundo", {}))
+	modo = "exploracao"
+	_recalcular_obstaculos()
+	_atualizar_destaques()
+	_atualizar_interface()
+	_notificar_personagens()
+	_carregando = false
+	print("Mundo carregado: ", pecas.size(), " personagens, ", objetos.size(), " objetos, ", mundo.diario.size(), " eventos no diário.")
+
+
+func _aplicar_ficha_salva(ficha: Dictionary, sv: Dictionary) -> void:
+	ficha["pv"] = mini(int(sv["pv"]), int(ficha["pv_max"]))
+	ficha["intencao"] = str(sv.get("intencao", "padrao"))
+	ficha["atividade"] = str(sv.get("atividade", ""))
+	if not (sv.get("conhecimento", {}) as Dictionary).is_empty():
+		ficha["conhecimento"] = (sv["conhecimento"] as Dictionary).duplicate(true)
+
+
 # Versão simples (true/false) para os atalhos de teclado
 func executar_comando(comando: Dictionary) -> bool:
 	return executar_comando_mestre(comando).begins_with("OK")
@@ -1966,6 +2281,300 @@ func _lista_de_objetos() -> String:
 	if objetos.is_empty():
 		return "Não há objetos no tabuleiro."
 	return "Objetos existentes: " + ", ".join(objetos.keys()) + "."
+
+
+# Entende "Kuzin", "Poço", "Taverna Javali Dourado" ou vazio (= perto do jogador)
+func _resolver_referencia(texto: String) -> Vector2i:
+	var t: String = texto.strip_edges()
+	if t != "":
+		var cp: Vector2i = _achar_por_nome(t)
+		if cp != CELULA_INVALIDA:
+			return cp
+		var no: String = _achar_objeto(t)
+		if no != "":
+			return objetos[no]["celula"]
+		for n in predios.keys():
+			if str(n).to_lower().contains(t.to_lower()):
+				var pr: Dictionary = predios[n]
+				return Vector2i((int(pr["x0"]) + int(pr["x1"])) / 2, (int(pr["z0"]) + int(pr["z1"])) / 2)
+	if celula_jogador != CELULA_INVALIDA:
+		return celula_jogador
+	return Vector2i(largura_tabuleiro / 2, profundidade_tabuleiro / 2)
+
+
+# ---------------------------------------------------------------
+# COERÊNCIA: o Mestre só pode falar do que EXISTE
+# ---------------------------------------------------------------
+# Coisas que o modelo de texto costuma inventar. Se a narração citar uma delas e ela NÃO existe
+# no tabuleiro, o Mestre é obrigado a reescrever (ver mestre_ia.gd).
+const TERMOS_DE_CENARIO: Array[String] = ["alcapao", "escada", "janela", "porao", "adega", "sotao", "andar de cima", "segundo andar",
+	"chamine", "estatua", "altar", "espelho", "quadro", "tapete", "cortina", "vitral", "ponte", "rio", "lago", "fonte", "portao",
+	"armadilha", "cofre", "alavanca", "cama", "estante", "lustre", "candelabro", "palco", "lareira", "balcao", "barril", "mesa",
+	"cadeira", "bau", "tocha", "poco", "fogueira", "arvore", "cerca", "porta dos fundos", "porta lateral", "banco", "caixote"]
+
+# Recursos que a descrição lista como "NÃO possui" quando faltam (rótulo, palavras que provam que existe)
+const RECURSOS_VERIFICAVEIS: Array = [["alçapão", "alcapao"], ["escada", "escada"], ["janelas", "janela"], ["porão ou adega", "porao|adega"],
+	["segundo andar", "segundo andar|andar de cima"], ["chaminé", "chamine"], ["palco", "palco"], ["lareira", "lareira"], ["porta dos fundos", "porta dos fundos"]]
+
+
+# ---------------------------------------------------------------
+# MOVIMENTO DO JOGADOR POR TEXTO (feito pelo JOGO, não pela IA)
+# "vou até a bancada", "me aproximo do Barnaby", "entro na casa"...
+# O jogo acha o alvo, calcula o caminho, move o Kuzin e devolve um FATO verdadeiro para o Mestre narrar.
+# ---------------------------------------------------------------
+const GATILHOS_DE_MOVIMENTO: Array[String] = ["aproxim", "chego", "dirij", "caminho", "corro", "entro", "saio", "me posiciono",
+	"vou ate", "vou para", "vou pra", "vou a ", "vou ao", "vou na", "vou no", "vou em", "indo ate", "ir ate", "ir para", "ir pra",
+	"quero ir", "vamos ate", "me movo", "me mexo", "ando ate", "ando ao", "ando para", "chegar perto", "ficar perto", "me afasto de"]
+const PALAVRAS_IGNORADAS: Array[String] = ["de", "do", "da", "dos", "das", "dourado", "javali"]
+
+
+func _alvos_de_movimento() -> Array:
+	var lista: Array = []
+	for c in pecas.keys():
+		if c == celula_jogador:
+			continue
+		lista.append({"nome": str(ficha_em(c)["nome"]), "busca": str(ficha_em(c)["nome"]), "celula": c, "tipo": "personagem"})
+	for n in objetos.keys():
+		if str(objetos[n]["modelo"]) == "parede":
+			continue
+		var busca: String = str(n)
+		for pn in predios.keys():
+			busca = busca.replace(" de " + str(pn), "")     # "Porta de Taverna X" -> "Porta"
+		lista.append({"nome": str(n), "busca": busca, "celula": objetos[n]["celula"], "tipo": "objeto"})
+	for n in predios.keys():
+		lista.append({"nome": str(n), "busca": str(n), "celula": CELULA_INVALIDA, "tipo": "predio"})
+	return lista
+
+
+# Variantes pelas quais o jogador pode citar o alvo (nome inteiro e cada palavra grande)
+func _variantes_do_nome(nome: String) -> Array:
+	var n: String = _normalizar(nome)
+	var v: Array = [n]
+	for tok in n.split(" "):
+		if tok.length() >= 4 and not PALAVRAS_IGNORADAS.has(tok) and not tok.is_valid_int():
+			v.append(tok)
+	return v
+
+
+# Devolve "" se o texto não é um pedido de movimento; senão devolve o FATO (sucesso ou falha) já executado.
+func interpretar_movimento(texto: String) -> String:
+	var t: String = " " + _normalizar(texto) + " "
+	var gatilho: bool = false
+	for g in GATILHOS_DE_MOVIMENTO:
+		if t.contains(g):
+			gatilho = true
+			break
+	if not gatilho or celula_jogador == CELULA_INVALIDA:
+		return ""
+	# acha o alvo citado primeiro
+	var melhor_pos: int = 9999
+	var melhor_var: String = ""
+	for a in _alvos_de_movimento():
+		for v in _variantes_do_nome(a["busca"]):
+			var pos: int = t.find(v)
+			if pos >= 0 and (pos < melhor_pos or (pos == melhor_pos and v.length() > melhor_var.length())):
+				melhor_pos = pos
+				melhor_var = v
+	if melhor_var == "":
+		return ""
+	# entre os que têm essa palavra, fica com o mais perto de Kuzin
+	var escolhido: Dictionary = {}
+	var melhor_d: int = 9999
+	for a in _alvos_de_movimento():
+		if not _variantes_do_nome(a["busca"]).has(melhor_var):
+			continue
+		var cel: Vector2i = a["celula"]
+		if a["tipo"] == "predio":
+			var pr: Dictionary = predios[a["nome"]]
+			cel = Vector2i((int(pr["x0"]) + int(pr["x1"])) / 2, (int(pr["z0"]) + int(pr["z1"])) / 2)
+		var d: int = distancia(celula_jogador, cel)
+		if a["tipo"] != "predio" and predio_em(cel) != predio_em(celula_jogador):
+			d += 15          # prefere o que está no mesmo lugar (dentro/fora) que Kuzin
+		if d < melhor_d:
+			melhor_d = d
+			escolhido = a.duplicate()
+			escolhido["celula"] = cel
+	if escolhido.is_empty():
+		return ""
+	var nome_kuzin: String = str(ficha_em(celula_jogador)["nome"])
+	if modo == "combate":
+		return "FATO DO JOGO: estamos em combate; Kuzin só se move no próprio turno, clicando no tabuleiro. NADA foi movido."
+	var alvo_cel: Vector2i = escolhido["celula"]
+	var destinos: Array = []
+	if escolhido["tipo"] == "predio":
+		var pr2: Dictionary = predios[escolhido["nome"]]
+		var dentro_agora: bool = predio_em(celula_jogador) == escolhido["nome"]
+		var porta_c: Vector2i = pr2["porta"]
+		var fora_c: Vector2i = pr2["fora"]
+		var dentro_c: Vector2i = porta_c + (porta_c - fora_c)
+		var quer_sair: bool = t.contains(" saio") or t.contains(" sair") or t.contains(" saindo")
+		destinos.append(fora_c if (quer_sair or (dentro_agora and not t.contains(" entro"))) else dentro_c)
+	var previos: Dictionary = {}
+	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_EXPLORACAO, true, previos)
+	var destino: Vector2i = CELULA_INVALIDA
+	if escolhido["tipo"] == "predio":
+		for d2 in destinos:
+			if alcance.has(d2) and not celula_ocupada(d2):
+				destino = d2
+		if destino == CELULA_INVALIDA:
+			# tenta qualquer célula livre alcançável perto da porta
+			var melhor_c: int = 9999
+			for c in alcance.keys():
+				if celula_ocupada(c):
+					continue
+				var dd: int = distancia(c, destinos[0])
+				if dd <= 1 and int(alcance[c]) < melhor_c:
+					melhor_c = int(alcance[c])
+					destino = c
+	else:
+		var melhor_custo: int = 9999
+		for raio in [1, 2]:
+			for c in alcance.keys():
+				if celula_ocupada(c) and c != celula_jogador:
+					continue
+				if distancia(c, alvo_cel) != raio:
+					continue
+				if int(alcance[c]) < melhor_custo:
+					melhor_custo = int(alcance[c])
+					destino = c
+			if destino != CELULA_INVALIDA:
+				break
+	if destino == CELULA_INVALIDA:
+		return "FATO DO JOGO: %s tentou ir até %s mas NÃO conseguiu (caminho bloqueado ou longe demais, mais de %d passos). Kuzin continua onde estava." % [nome_kuzin, escolhido["nome"], LIMITE_EXPLORACAO]
+	if destino == celula_jogador:
+		return "FATO DO JOGO: %s já estava ao lado de %s. Não precisou andar." % [nome_kuzin, escolhido["nome"]]
+	var passos: int = int(alcance[destino])
+	if not mover_peca(celula_jogador, destino, _reconstruir_caminho(previos, celula_jogador, destino)):
+		return "FATO DO JOGO: %s tentou ir até %s mas não conseguiu andar. Kuzin continua onde estava." % [nome_kuzin, escolhido["nome"]]
+	if escolhido["tipo"] == "predio":
+		return "FATO DO JOGO: %s andou %d passos e agora está %s." % [nome_kuzin, passos, lugar_texto(celula_jogador)]
+	return "FATO DO JOGO: %s andou %d passos e agora está ao lado de %s (%s)." % [nome_kuzin, passos, escolhido["nome"], lugar_texto(celula_jogador)]
+
+
+func _normalizar(texto: String) -> String:
+	var t: String = texto.to_lower()
+	var mapa: Dictionary = {"á": "a", "à": "a", "â": "a", "ã": "a", "ä": "a", "é": "e", "è": "e", "ê": "e", "ë": "e", "í": "i", "ì": "i", "î": "i",
+		"ï": "i", "ó": "o", "ò": "o", "ô": "o", "õ": "o", "ö": "o", "ú": "u", "ù": "u", "û": "u", "ü": "u", "ç": "c"}
+	for k in mapa.keys():
+		t = t.replace(k, mapa[k])
+	return t
+
+
+# Tudo o que existe na cena, em texto normalizado (nomes, modelos, recursos das construções)
+func _universo_de_termos(somente_predio: String = "") -> String:
+	var partes: Array = []
+	for n in objetos.keys():
+		if somente_predio != "" and str(objetos[n].get("predio", "")) != somente_predio and predio_em(objetos[n]["celula"]) != somente_predio:
+			continue
+		partes.append(str(n))
+		partes.append(str(objetos[n]["modelo"]))
+	for n in predios.keys():
+		if somente_predio != "" and str(n) != somente_predio:
+			continue
+		partes.append(str(n))
+		for r in predios[n]["recursos"]:
+			partes.append(str(r))
+		for porta in predios[n]["portas"]:
+			partes.append(str(porta["rotulo"]))
+	return _normalizar(" | ".join(partes))
+
+
+# Palavras que indicam contato/proximidade física com Kuzin
+const FRASES_DE_PROXIMIDADE: Array[String] = ["sussurr", "cochich", "ao seu lado", "ao lado de voce", "do seu lado", "no seu ouvido",
+	"sua orelha", "se inclina", "te entrega", "lhe entrega", "senta ao lado", "sentado ao lado", "sentada ao lado", "ao lado do", "ao lado da"]
+
+
+# Analisa a narração frase por frase: [{frase, problema}]
+func _analisar_frases(texto: String) -> Array:
+	var resultado: Array = []
+	var rx := RegEx.new()
+	rx.compile("[^.!?\\n]+[.!?]*")
+	var vago := RegEx.new()
+	vago.compile("(sussurr|murmur|cochich|disse|diz|fal)\\w*\\s+(algo|alguma coisa|qualquer coisa)")
+	for m in rx.search_all(texto):
+		var frase: String = m.get_string().strip_edges()
+		if frase == "":
+			continue
+		var n: String = _normalizar(frase)
+		var inexistentes: Array = termos_inexistentes(frase)
+		if not inexistentes.is_empty():
+			resultado.append({"frase": frase, "problema": "cita coisas que NÃO existem na cena: " + ", ".join(inexistentes)})
+			continue
+		if vago.search(n) != null:
+			resultado.append({"frase": frase, "problema": "alguém fala/sussurra 'algo' sem dizer o quê: escreva a fala entre aspas ou não faça o personagem falar"})
+			continue
+		if celula_jogador != CELULA_INVALIDA:
+			var motivo_prox: String = ""
+			for c in pecas.keys():
+				if c == celula_jogador:
+					continue
+				var d: int = distancia(celula_jogador, c)
+				if d <= 2:
+					continue
+				var nome_n: String = _normalizar(str(ficha_em(c)["nome"]))
+				var citado: bool = false
+				for token in nome_n.split(" "):
+					if token.length() >= 5 and n.contains(token):
+						citado = true
+				if not citado:
+					continue
+				for chave in FRASES_DE_PROXIMIDADE:
+					if n.contains(chave):
+						motivo_prox = "%s está %s; longe demais para isso. Se a cena exige, primeiro mova-o até perto de Kuzin (comando mover) ou narre de outra forma" % [ficha_em(c)["nome"], _palavra_de_distancia(d)]
+						break
+				if motivo_prox != "":
+					break
+			if motivo_prox != "":
+				resultado.append({"frase": frase, "problema": motivo_prox})
+	return resultado
+
+
+func problemas_de_narracao(texto: String) -> Array:
+	var lista: Array = []
+	for r in _analisar_frases(texto):
+		var msg: String = "'%s' -> %s" % [str(r["frase"]).left(90), r["problema"]]
+		if not lista.has(msg):
+			lista.append(msg)
+	return lista
+
+
+# Último recurso: remove as frases problemáticas (se sobrar alguma coisa)
+func limpar_narracao(texto: String) -> String:
+	var ruins: Array = []
+	for r in _analisar_frases(texto):
+		ruins.append(str(r["frase"]))
+	if ruins.is_empty():
+		return texto
+	var rx := RegEx.new()
+	rx.compile("[^.!?\\n]+[.!?]*")
+	var boas: Array = []
+	for m in rx.search_all(texto):
+		var frase: String = m.get_string().strip_edges()
+		if frase != "" and not ruins.has(frase):
+			boas.append(frase)
+	if boas.is_empty():
+		return texto
+	return " ".join(boas)
+
+
+# Termos citados no texto que NÃO existem no tabuleiro
+func termos_inexistentes(texto: String) -> Array:
+	var universo: String = _universo_de_termos()
+	var t: String = _normalizar(texto)
+	var achados: Array = []
+	for termo in TERMOS_DE_CENARIO:
+		if universo.contains(termo):
+			continue
+		var rx := RegEx.new()
+		rx.compile("\\b" + termo + "(s|es)?\\b")
+		var m: RegExMatch = rx.search(t)
+		if m == null:
+			continue
+		var antes: String = t.substr(maxi(m.get_start() - 25, 0), mini(m.get_start(), 25))
+		if antes.contains("nao ") or antes.contains("sem ") or antes.contains("nenhum") or antes.contains("nada de"):
+			continue
+		achados.append(termo)
+	return achados
 
 
 # Texto que o Mestre IA lê para "enxergar" o tabuleiro
@@ -1991,11 +2600,34 @@ func descrever_tabuleiro() -> String:
 		if not inv.is_empty():
 			t += ", carrega: " + ", ".join(inv)
 		t += "\n"
+	t += proximidade_texto()
 	if not predios.is_empty():
-		t += "CONSTRUÇÕES (paredes de blocos; só dá para entrar/sair pela porta):\n"
+		t += "CONSTRUÇÕES (paredes de blocos; só dá para entrar/sair pelas portas listadas). SÓ MENCIONE O QUE ESTÁ LISTADO; o que consta em NÃO possui NÃO EXISTE:\n"
 		for n in predios.keys():
 			var pr: Dictionary = predios[n]
-			t += "- %s (%s): interior x %d a %d, z %d a %d; porta em (%d,%d); fora da porta (%d,%d)\n" % [n, pr["modelo"], int(pr["x0"]) + 1, int(pr["x1"]) - 1, int(pr["z0"]) + 1, int(pr["z1"]) - 1, pr["porta"].x, pr["porta"].y, pr["fora"].x, pr["fora"].y]
+			t += "- %s (%s): interior x %d a %d, z %d a %d\n" % [n, pr["modelo"], int(pr["x0"]) + 1, int(pr["x1"]) - 1, int(pr["z0"]) + 1, int(pr["z1"]) - 1]
+			for porta in pr["portas"]:
+				t += "    * %s no lado %s, em (%d,%d), saída para (%d,%d)\n" % [porta["rotulo"], porta["lado"], porta["celula"].x, porta["celula"].y, porta["fora"].x, porta["fora"].y]
+			if not (pr["recursos"] as Array).is_empty():
+				t += "    * contém: " + ", ".join(pr["recursos"]) + "\n"
+			var dentro_nomes: Array = []
+			for on in objetos.keys():
+				var om: String = str(objetos[on]["modelo"])
+				if om != "parede" and om != "porta" and predio_em(objetos[on]["celula"]) == str(n):
+					dentro_nomes.append(str(on))
+			if not dentro_nomes.is_empty():
+				t += "    * objetos dentro: " + ", ".join(dentro_nomes) + "\n"
+			var universo: String = _universo_de_termos(str(n))
+			var faltando: Array = []
+			for rv in RECURSOS_VERIFICAVEIS:
+				var tem: bool = false
+				for chave in str(rv[1]).split("|"):
+					if universo.contains(chave):
+						tem = true
+				if not tem:
+					faltando.append(rv[0])
+			if not faltando.is_empty():
+				t += "    * NÃO possui: " + ", ".join(faltando) + "\n"
 	var lista_obj: String = ""
 	for n in objetos.keys():
 		var o: Dictionary = objetos[n]
@@ -2005,11 +2637,36 @@ func descrever_tabuleiro() -> String:
 		lista_obj += "- %s (%s, %s) %s\n" % [n, o["modelo"], o["estado"], onde]
 	if lista_obj != "":
 		t += "OBJETOS:\n" + lista_obj
+	t += mundo.diario_para_ia()
 	if not alturas.is_empty():
 		var partes: Array = []
 		for c in alturas.keys():
 			partes.append("(%d,%d)=nível %d" % [c.x, c.y, alturas[c]])
 		t += "TERRENO ELEVADO: " + ", ".join(partes) + "\n"
+	return t
+
+
+# Frases prontas de distância em relação ao Kuzin (o Mestre NÃO deve inventar distâncias)
+func _palavra_de_distancia(d: int) -> String:
+	if d <= 1:
+		return "ao lado de Kuzin (dá para sussurrar e tocar)"
+	if d <= 3:
+		return "bem perto de Kuzin (conversa em voz normal)"
+	if d <= 7:
+		return "a alguns passos de Kuzin (precisa falar mais alto)"
+	return "longe de Kuzin (só gritando; fora do alcance da voz)"
+
+
+func proximidade_texto() -> String:
+	if celula_jogador == CELULA_INVALIDA:
+		return ""
+	var t: String = "PROXIMIDADE DE KUZIN (já calculada pelo jogo; NÃO invente distâncias nem posições):\n"
+	t += "- Kuzin está %s.\n" % lugar_texto(celula_jogador)
+	for c in pecas.keys():
+		if c == celula_jogador:
+			continue
+		var f: Dictionary = ficha_em(c)
+		t += "- %s: %s.\n" % [f["nome"], _palavra_de_distancia(distancia(celula_jogador, c))]
 	return t
 
 
@@ -2235,6 +2892,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_HOME:
 			_enquadrar_camera(true)             # mostra o mapa inteiro
 		KEY_F9:
+			apagar_mundo()                      # F9 = recomeçar do zero (apaga o jogo salvo)
 			get_tree().reload_current_scene()
 		KEY_EQUAL, KEY_PLUS, KEY_KP_ADD:
 			executar_comando({"acao": "redimensionar"}) if false else redimensionar_tabuleiro(largura_tabuleiro + 1, profundidade_tabuleiro + 1)

@@ -32,6 +32,9 @@ COMO NARRAR:
 - Se o jogador FAZ uma pergunta (onde estou? quem está aqui? o que vejo?), responda como um mestre responderia a uma dúvida: direto, dizendo o que Kuzin percebe, com detalhes úteis (onde ele está, quem está por perto e o que está fazendo). Sem comandos.
 - Use SOMENTE lugares, objetos e personagens que existem no estado. Não invente lugares novos.
 - Nunca decida falas, ações ou pensamentos de Kuzin. Termine abrindo espaço para a próxima ação dele.
+- Respeite as DISTÂNCIAS da seção PROXIMIDADE DE KUZIN: só quem está "ao lado" pode sussurrar ou tocar em Kuzin; quem está "longe" não pode. Não coloque Kuzin ao lado de alguém que o estado mostra distante. Se um NPC precisa chegar perto, mova-o antes com o comando mover.
+- Quando um personagem fala, escreva a FALA entre aspas. Nunca escreva "sussurrou algo" ou "disse alguma coisa" sem dizer o quê.
+- Não comece luta sem motivo claro. Só use iniciar_combate se um inimigo realmente atacar ou ameaçar Kuzin de perto, ou se Kuzin atacar; preencha o campo "texto" com o MOTIVO (quem fez o quê) e explique isso na narração.
 - Você NÃO rola dados nem calcula dano: o jogo faz isso. Ao narrar combate, descreva os golpes sem citar números de dado.
 MODOS:
 - EXPLORAÇÃO (sem turnos): se Kuzin quer ir a algum lugar, use mover com alvo Kuzin para uma célula LIVRE perto do destino (ao lado do objeto/pessoa; para sair de um prédio passe pela porta). Se uma luta começa ou Kuzin ataca, use iniciar_combate.
@@ -40,14 +43,15 @@ COMANDOS (campo "acao"; use "comandos":[] se nada muda no mundo):
 - mover (alvo, x, z) | colocar (alvo=nome novo, modelo, papel, x, z) | remover (alvo)
 - intencao (alvo, estado: padrao|fugir|parado|agressivo) | atividade (alvo, texto curto do que faz agora)
 - criar_objeto (alvo=nome novo, modelo, x, z) | mover_objeto (alvo, para=personagem OU x e z) | dar_item (alvo=objeto, para=personagem, objeto a 1 célula ou menos) | soltar_item (alvo) | mudar_estado (alvo, estado) | remover_objeto (alvo)
-- construir (alvo=nome, modelo=taverna|casa|armazem|templo, x, z do canto de cima à esquerda, largura, profundidade, lado=porta norte|sul|leste|oeste): coisas grandes são construídas com vários blocos.
-- iniciar_combate (alvo="combate") | encerrar_combate (alvo="combate")
+- gerar_construcao (alvo=nome da construção, modelo=taverna|casa|armazem|templo, tamanho=pequeno|medio|grande, para=personagem ou lugar de referência, extras=[porta_dos_fundos, porta_lateral, palco, alcapao, lareira]): o JOGO desenha a planta (cada vez diferente) e depois te informa o que ela contém. Use extras só se a história pedir (ex.: alguém entra pela porta dos fundos -> extras ["porta_dos_fundos"]).
+- iniciar_combate (alvo="combate", texto=motivo da luta; só se algum inimigo estiver a menos de 8 passos de Kuzin) | encerrar_combate (alvo="combate")
 EXEMPLO (Kuzin quer ir ao balcão): "comandos":[{"acao":"mover","alvo":"Kuzin","x":2,"z":3}]
 EXEMPLO (o padeiro manda um pão): "comandos":[{"acao":"criar_objeto","alvo":"Pão quente","modelo":"pao","x":2,"z":6},{"acao":"mover_objeto","alvo":"Pão quente","para":"Kuzin"},{"acao":"dar_item","alvo":"Pão quente","para":"Kuzin"}]
 Se um comando FALHAR, o resultado aparece no próximo turno: corrija ou tente outro.
+REGRA DE OURO: só existe o que está no estado do tabuleiro (objetos, construções e a lista "contém"). Se algo consta em "NÃO possui" (alçapão, escada, janelas...), NÃO existe: não cite. Se quiser algo novo, crie com um comando; não invente só na narração.
 Responda SEMPRE em JSON: {"narracao": "...", "comandos": [...], "novos_fatos": ["fato curto importante"]}."""
 
-const TEXTO_ABERTURA: String = "Comece a aventura: em 3 frases, descreva a cena como um mestre faria (onde Kuzin está, quem está com ele e o que cada um faz, e o clima lá fora) e pergunte o que Kuzin faz. Use comandos:[]."
+const TEXTO_ABERTURA: String = "Comece a aventura: em 3 frases, descreva a cena como um mestre faria, a partir de ONDE KUZIN ESTÁ (veja PROXIMIDADE DE KUZIN): o que ele vê e ouve, quem está perto e quem está longe, sem inventar falas nem aproximações. Não comece nenhuma luta. Pergunte o que Kuzin faz. Use comandos:[]."
 const TEXTO_TURNO_NPCS: String = "Narre em 2 a 3 frases, de forma dramática e SEM citar números de dado, apenas estes acontecimentos (não invente dano nem mortes):"
 
 var _pid: int = -1
@@ -170,10 +174,30 @@ func _tabuleiro() -> Node:
 	return get_tree().get_first_node_in_group("tabuleiro")
 
 
+const PREFIXOS_DE_PERGUNTA: Array[String] = ["onde", "quem", "qual", "quais", "quando", "como", "quanto", "quantos", "quantas",
+	"por que", "porque", "o que", "oque", "que", "tem", "tem algum", "tem alguma", "ha", "há", "existe", "existem", "posso", "consigo",
+	"sera", "será", "descreva", "explique", "me explica", "me diz", "me fala", "me descreva", "me conta", "pode", "dá para", "da para", "vejo"]
+
+
+# Pergunta = o jogador quer ENTENDER (tirar dúvida), não agir
+func _eh_pergunta(texto: String) -> bool:
+	var t: String = texto.strip_edges().to_lower()
+	if t.contains("?"):
+		return true
+	for prefixo in PREFIXOS_DE_PERGUNTA:
+		if t == prefixo or t.begins_with(prefixo + " "):
+			return true
+	return false
+
+
 func jogador_agiu(texto: String) -> void:
 	if _ocupado or not _pronto:
 		return
-	await _consultar("JOGADOR (Kuzin) diz/faz: " + texto + "\n(Se for uma pergunta, responda como um mestre tirando a dúvida do jogador.)", texto)
+	if _eh_pergunta(texto):
+		var pedido: String = "O JOGADOR FEZ UMA PERGUNTA (ele quer entender melhor, NÃO está agindo): \"" + texto + "\"\nResponda DIRETAMENTE à pergunta, como um mestre tirando uma dúvida na mesa, usando só o que existe no estado do tabuleiro. NÃO continue a história, NÃO faça ninguém agir ou falar, NÃO narre ações de Kuzin. Se não houver nada assim, diga isso. comandos: []."
+		await _consultar(pedido, texto, "pergunta")
+	else:
+		await _consultar("JOGADOR (Kuzin) diz/faz: " + texto, texto, "acao")
 
 
 func narrar_turno(eventos: Array) -> void:
@@ -186,7 +210,7 @@ func narrar_turno(eventos: Array) -> void:
 func iniciar_aventura() -> void:
 	if _ocupado or not _pronto:
 		return
-	await _consultar(TEXTO_ABERTURA, "(início)")
+	await _consultar(TEXTO_ABERTURA, "(início)", "abertura")
 
 
 func nova_campanha() -> void:
@@ -196,15 +220,15 @@ func nova_campanha() -> void:
 	_salvar_campanha()
 
 
-func _consultar(pedido: String, resumo_para_historico: String) -> void:
+func _consultar(pedido: String, resumo_para_historico: String, modo: String = "acao") -> void:
 	_definir_ocupado(true)
 	_status("O Mestre está pensando...")
 
 	var tab: Node = _tabuleiro()
 	var estado: String = tab.descrever_tabuleiro() if tab != null else ""
-	var mensagens: Array = _montar_mensagens(pedido, estado)
 	var schema: Dictionary = _schema_da_resposta(tab)
-	var resposta: Dictionary = await _chamar_servidor(mensagens, schema)
+	var temperatura: float = 0.4 if modo == "pergunta" else TEMPERATURA
+	var resposta: Dictionary = await _pedir_com_coerencia(_montar_mensagens(pedido, estado), schema, temperatura, tab)
 
 	if resposta.is_empty():
 		_status("ERRO: a IA não respondeu.")
@@ -212,6 +236,30 @@ func _consultar(pedido: String, resumo_para_historico: String) -> void:
 		_definir_ocupado(false)
 		return
 
+	var comandos: Array = resposta.get("comandos", [])
+	if modo == "pergunta" or modo == "abertura":
+		comandos = []                      # pergunta e abertura não mudam o mundo
+
+	# Comandos que mudam o mundo ANTES da narração (gerar construção, iniciar combate):
+	# o jogo executa primeiro e o Mestre narra depois, sabendo o resultado (2 passadas).
+	if _tem_pre_comando(comandos) and tab != null:
+		await _executar_comandos(comandos)
+		var estado2: String = tab.descrever_tabuleiro()
+		var pedido2: String = pedido + "\n(O jogo JÁ EXECUTOU seus comandos; veja o resultado em RESULTADO DOS SEUS ÚLTIMOS COMANDOS. Narre agora usando SÓ o que existe no estado. Se um combate COMEÇOU, explique com clareza o que o desencadeou (quem fez o quê e por quê). Se o combate FALHOU em começar, NÃO o mencione: apenas continue a cena. Não repita gerar_construcao nem iniciar_combate.)"
+		var resposta2: Dictionary = await _pedir_com_coerencia(_montar_mensagens(pedido2, estado2), schema, temperatura, tab)
+		if not resposta2.is_empty():
+			resposta = resposta2
+		comandos = []
+		for c in resposta.get("comandos", []):
+			if c is Dictionary and str(c.get("acao", "")) != "gerar_construcao" and str(c.get("acao", "")) != "iniciar_combate":
+				comandos.append(c)
+
+		await _finalizar(resposta, comandos, resumo_para_historico, false)
+	else:
+		await _finalizar(resposta, comandos, resumo_para_historico, true)
+
+
+func _finalizar(resposta: Dictionary, comandos: Array, resumo_para_historico: String, executar: bool) -> void:
 	var narracao: String = str(resposta.get("narracao", "")).strip_edges()
 	if narracao != "":
 		mestre_falou.emit(narracao)
@@ -228,10 +276,43 @@ func _consultar(pedido: String, resumo_para_historico: String) -> void:
 	while _fatos.size() > MAX_FATOS:
 		_fatos.pop_front()
 
-	await _executar_comandos(resposta.get("comandos", []))
+	if executar or not comandos.is_empty():
+		var feedback_antes: String = _feedback_pendente
+		await _executar_comandos(comandos)
+		if feedback_antes != "" and _feedback_pendente == "":
+			_feedback_pendente = feedback_antes
 	_salvar_campanha()
 	_status("Pronto.")
 	_definir_ocupado(false)
+
+
+func _tem_pre_comando(comandos: Array) -> bool:
+	for c in comandos:
+		if c is Dictionary and (str(c.get("acao", "")) == "gerar_construcao" or str(c.get("acao", "")) == "iniciar_combate"):
+			return true
+	return false
+
+
+# Pede ao servidor; confere a narração (coisas inexistentes, falas vagas, distâncias impossíveis).
+# Se tiver problema, manda reescrever (1 vez); se ainda tiver, remove as frases problemáticas.
+func _pedir_com_coerencia(mensagens: Array, schema: Dictionary, temperatura: float, tab: Node) -> Dictionary:
+	var resposta: Dictionary = await _chamar_servidor(mensagens, schema, temperatura)
+	if resposta.is_empty() or tab == null:
+		return resposta
+	var problemas: Array = tab.problemas_de_narracao(str(resposta.get("narracao", "")))
+	if problemas.is_empty():
+		return resposta
+	print("[MestreIA] narração com problemas: ", problemas)
+	var nova: Array = mensagens.duplicate()
+	nova.append({"role": "assistant", "content": JSON.stringify(resposta)})
+	nova.append({"role": "user", "content": "ERRO DE COERÊNCIA na sua narração. Corrija: " + " | ".join(problemas) + "\nReescreva a resposta inteira usando só o que está no estado do tabuleiro (respeite a seção PROXIMIDADE DE KUZIN)."})
+	var segunda: Dictionary = await _chamar_servidor(nova, schema, temperatura)
+	if segunda.is_empty():
+		segunda = resposta
+	var restantes: Array = tab.problemas_de_narracao(str(segunda.get("narracao", "")))
+	if not restantes.is_empty():
+		segunda["narracao"] = tab.limpar_narracao(str(segunda.get("narracao", "")))
+	return segunda
 
 
 func _montar_mensagens(pedido: String, estado: String) -> Array:
@@ -268,16 +349,15 @@ func _schema_da_resposta(tab: Node) -> Dictionary:
 	var comando: Dictionary = {
 		"type": "object",
 		"properties": {
-			"acao": {"type": "string", "enum": ["mover", "colocar", "remover", "intencao", "atividade", "criar_objeto", "mover_objeto", "dar_item", "soltar_item", "mudar_estado", "remover_objeto", "construir", "iniciar_combate", "encerrar_combate"]},
+			"acao": {"type": "string", "enum": ["mover", "colocar", "remover", "intencao", "atividade", "criar_objeto", "mover_objeto", "dar_item", "soltar_item", "mudar_estado", "remover_objeto", "gerar_construcao", "iniciar_combate", "encerrar_combate"]},
 			"texto": {"type": "string"},
 			"alvo": {"type": "string"},
 			"para": {"type": "string"},
 			"modelo": {"type": "string", "enum": modelos},
 			"papel": {"type": "string", "enum": ["aliado", "inimigo", "neutro"]},
 			"estado": {"type": "string", "enum": estados},
-			"lado": {"type": "string", "enum": ["norte", "sul", "leste", "oeste"]},
-			"largura": {"type": "integer", "minimum": 3, "maximum": 12},
-			"profundidade": {"type": "integer", "minimum": 3, "maximum": 12},
+			"tamanho": {"type": "string", "enum": ["pequeno", "medio", "grande"]},
+			"extras": {"type": "array", "items": {"type": "string", "enum": ["porta_dos_fundos", "porta_lateral", "palco", "alcapao", "lareira"]}, "maxItems": 3},
 			"x": {"type": "integer", "minimum": 0, "maximum": max_x},
 			"z": {"type": "integer", "minimum": 0, "maximum": max_z},
 		},
@@ -294,10 +374,10 @@ func _schema_da_resposta(tab: Node) -> Dictionary:
 	}
 
 
-func _chamar_servidor(mensagens: Array, schema: Dictionary) -> Dictionary:
+func _chamar_servidor(mensagens: Array, schema: Dictionary, temperatura: float = TEMPERATURA) -> Dictionary:
 	var corpo: Dictionary = {
 		"messages": mensagens,
-		"temperature": TEMPERATURA,
+		"temperature": temperatura,
 		"max_tokens": MAX_TOKENS_RESPOSTA,
 		"response_format": {"type": "json_schema", "json_schema": {"name": "resposta", "strict": true, "schema": schema}},
 	}

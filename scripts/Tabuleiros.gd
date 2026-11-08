@@ -17,6 +17,7 @@ const IATatica = preload("res://scripts/ia_tatica.gd")
 const Regras = preload("res://scripts/regras.gd")
 const Gerador = preload("res://scripts/gerador_cenas.gd")
 const Mundo = preload("res://scripts/mundo.gd")
+const GeradorHistoria = preload("res://scripts/gerador_historia.gd")
 
 # Sinais: o painel de chat escuta o "log_de_combate" para mostrar o que aconteceu
 signal log_de_combate(texto: String)
@@ -67,6 +68,7 @@ Teste: B notas da IA | J demo do pão | N monstro | O pedra | H altura | F2 anda
 Chat: /onde | /notas | /nova | Esc ou clicar fora solta o chat"""
 
 const CRIAR_CENARIO_DE_TESTE: bool = true
+const CENARIO_ALEATORIO: bool = true                 # true = cada partida nova tem um cenário NOVO; false = cenário fixo de teste (Taverna Javali Dourado)
 const ORIGEM_CENARIO: Vector2i = Vector2i(10, 8)   # onde o cenário de teste começa no mapa grande
 const USAR_MESTRE_IA: bool = true                    # false = NPCs agem sem narração do Mestre
 const MAX_NPCS: int = 12
@@ -195,6 +197,8 @@ var fim_de_jogo: bool = false
 var turno_em_andamento: bool = false
 # MODO DE JOGO (igual à mesa): "exploracao" = conversa com o Mestre, sem turnos;
 # "combate" = ordem de iniciativa, cada um age no seu turno.
+var semente_cenario: int = 0                # a mesma semente gera sempre o mesmo cenário inicial (o jogo salvo usa isso)
+var premissa_atual: String = ""             # texto da situação inicial que o Mestre lê
 var mundo = Mundo.new()                     # propriedades dos itens, fichas de conhecimento e diário
 var _registro_ativo: bool = false           # só registra no diário depois que o cenário inicial está pronto
 var _gerando: bool = false                  # true enquanto o gerador monta uma construção inteira
@@ -257,7 +261,17 @@ func _ready() -> void:
 	movimento_restante = distancia_maxima
 
 	if CRIAR_CENARIO_DE_TESTE:
-		_montar_cenario_de_teste()
+		if CENARIO_ALEATORIO:
+			var salvo: Dictionary = _ler_salvo()
+			if semente_cenario == 0:
+				semente_cenario = int(salvo.get("semente", 0))
+			if semente_cenario == 0:
+				randomize()
+				semente_cenario = randi_range(1, 2000000000)
+			premissa_atual = GeradorHistoria.montar(self, semente_cenario)
+			print("Cenário novo gerado (semente ", semente_cenario, "): ", premissa_atual)
+		else:
+			_montar_cenario_de_teste()
 
 	carregar_mundo()            # se existe um jogo salvo, continua de onde parou
 	_registro_ativo = true
@@ -495,8 +509,12 @@ func predio_em(celula: Vector2i) -> String:
 
 # "da Taverna", "do Armazém"... (para frases em português)
 func _de_predio(nome: String) -> String:
-	var modelo: String = str(predios[nome]["modelo"]) if predios.has(nome) else ""
-	var feminino: bool = modelo == "taverna" or modelo == "casa"
+	var primeira: String = nome.split(" ")[0].to_lower()
+	var feminino: bool = primeira.ends_with("a") or primeira == "estalagem"
+	if nome.begins_with("O "):
+		return "do " + nome.substr(2)
+	if nome.begins_with("A "):
+		return "da " + nome.substr(2)
 	return ("da " if feminino else "do ") + nome
 
 
@@ -1955,6 +1973,7 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 				return "FALHOU: papel inválido '%s' (use aliado, inimigo ou neutro)." % lado
 			resultado = colocar_personagem(Vector2i(x, z), alvo if alvo != "" else modelo.capitalize(), modelo, lado)
 			if resultado:
+				_aplicar_conhecimento_do_mestre(Vector2i(x, z), comando)
 				registrar_evento("cena", "%s apareceu na cena (%s)." % [alvo, lado if lado != "" else "criatura"])
 				return "OK: %s apareceu em (%d,%d)." % [alvo, x, z]
 		"remover":
@@ -2107,6 +2126,106 @@ func trancar_objeto(nome_objeto: String, trancado: bool) -> bool:
 	return true
 
 
+# O Mestre pode criar um personagem já com personalidade, o que ele sabe e um segredo
+func _aplicar_conhecimento_do_mestre(celula: Vector2i, comando: Dictionary) -> void:
+	var ficha: Dictionary = ficha_em(celula)
+	if ficha.is_empty() or str(ficha.get("lado", "")) == "inimigo":
+		return
+	var c: Dictionary = ficha["conhecimento"]
+	var pers: String = str(comando.get("personalidade", "")).strip_edges().left(120)
+	var sabe: String = str(comando.get("sabe", "")).strip_edges().left(200)
+	var segredo: String = str(comando.get("segredo", "")).strip_edges().left(200)
+	if pers != "":
+		c["personalidade"] = pers
+	if sabe != "":
+		c["sabe"] = [sabe]
+	if segredo != "":
+		c["esconde"] = [{"fato": segredo, "atitude_minima": 2}]
+
+
+# Pode conversar? (precisa estar perto)
+func pode_conversar_com(nome: String) -> String:
+	var cel: Vector2i = _achar_por_nome(nome)
+	if cel == CELULA_INVALIDA:
+		return "Não existe ninguém chamado '%s'. %s" % [nome, _lista_de_nomes()]
+	if celula_jogador == CELULA_INVALIDA:
+		return "Kuzin não está em cena."
+	if str(ficha_em(cel).get("lado", "")) == "inimigo":
+		return "%s é um inimigo; não dá para conversar assim." % ficha_em(cel)["nome"]
+	if distancia(celula_jogador, cel) > 3:
+		return "%s está longe demais para conversar. Aproxime-se primeiro (clique ou escreva 'vou até %s')." % [ficha_em(cel)["nome"], ficha_em(cel)["nome"]]
+	return ""
+
+
+# Qual NPC (não inimigo) foi citado no texto do jogador? ("" se nenhum)
+func npc_citado_no_texto(texto: String) -> String:
+	var t: String = " " + _normalizar(texto) + " "
+	var melhor: String = ""
+	var melhor_tam: int = 0
+	var melhor_pos: int = 9999
+	for c in pecas.keys():
+		if c == celula_jogador or str(ficha_em(c).get("lado", "")) == "inimigo":
+			continue
+		var nome: String = str(ficha_em(c)["nome"])
+		for v in _variantes_do_nome(nome):
+			var pos: int = t.find(v)
+			if pos >= 0 and (v.length() > melhor_tam or (v.length() == melhor_tam and pos < melhor_pos)):
+				melhor = nome
+				melhor_tam = v.length()
+				melhor_pos = pos
+	return melhor
+
+
+func nome_exato_do_npc(nome: String) -> String:
+	var cel: Vector2i = _achar_por_nome(nome)
+	return "" if cel == CELULA_INVALIDA else str(ficha_em(cel)["nome"])
+
+
+# Ajusta a atitude do NPC conforme o que Kuzin disse; devolve o texto do segredo liberado (ou "")
+func processar_fala_para_npc(nome: String, texto: String) -> Dictionary:
+	var cel: Vector2i = _achar_por_nome(nome)
+	if cel == CELULA_INVALIDA:
+		return {}
+	var ficha: Dictionary = ficha_em(cel)
+	var c: Dictionary = ficha["conhecimento"]
+	var antes: int = int(c.get("atitude", 0))
+	var t: String = _normalizar(texto)
+	var delta: int = 0
+	for palavra in ["obrigad", "por favor", "amigo", "amiga", "ajudar", "ajudo", "respeito", "confio", "prometo", "desculp"]:
+		if t.contains(palavra):
+			delta = 1
+	for palavra in ["idiota", "burro", "burra", "mentiros", "ameaco", "matar", "vou te", "cala a boca", "inutil"]:
+		if t.contains(palavra):
+			delta = -1
+	var depois: int = clampi(antes + delta, -3, 3)
+	c["atitude"] = depois
+	var liberados: Array = []
+	for e in c.get("esconde", []):
+		if depois >= int(e["atitude_minima"]) and not (c["revelado"] as Array).has(str(e["fato"])):
+			liberados.append(str(e["fato"]))
+	if depois != antes:
+		registrar_evento("conversa", "A atitude de %s em relação a Kuzin mudou para: %s." % [ficha["nome"], mundo.descricao_da_atitude(depois)])
+	return {"atitude": depois, "mudou": depois != antes, "liberados": liberados}
+
+
+func marcar_segredo_contado(nome: String, fato: String) -> void:
+	var cel: Vector2i = _achar_por_nome(nome)
+	if cel == CELULA_INVALIDA:
+		return
+	var c: Dictionary = ficha_em(cel)["conhecimento"]
+	if not (c["revelado"] as Array).has(fato):
+		(c["revelado"] as Array).append(fato)
+		registrar_evento("conversa", "%s contou um segredo a Kuzin: %s" % [ficha_em(cel)["nome"], fato])
+
+
+# Texto para o Mestre/IA falar COMO o NPC: só o que ele sabe + segredos já liberados (o resto a IA nem recebe)
+func ficha_para_conversa(nome: String) -> String:
+	var cel: Vector2i = _achar_por_nome(nome)
+	if cel == CELULA_INVALIDA:
+		return ""
+	return mundo.ficha_para_conversa(str(ficha_em(cel)["nome"]), ficha_em(cel))
+
+
 func descrever_npc(nome: String) -> String:
 	var cel: Vector2i = _achar_por_nome(nome)
 	if cel == CELULA_INVALIDA:
@@ -2122,6 +2241,18 @@ func _notification(what: int) -> void:
 func apagar_mundo() -> void:
 	if FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(Mundo.ARQUIVO_MUNDO))
+
+
+# Lê o arquivo de jogo salvo ({} se não existe ou é de uma versão antiga)
+func _ler_salvo() -> Dictionary:
+	if not FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
+		return {}
+	var dados: Variant = str_to_var(FileAccess.get_file_as_string(Mundo.ARQUIVO_MUNDO))
+	if not (dados is Dictionary) or int(dados.get("versao", 0)) != 2:
+		return {}
+	if CENARIO_ALEATORIO and int(dados.get("semente", 0)) == 0:
+		return {}
+	return dados
 
 
 func salvar_mundo() -> void:
@@ -2147,7 +2278,7 @@ func salvar_mundo() -> void:
 		preds.append({"nome": str(n), "modelo": str(p["modelo"]), "canto": Vector2i(int(p["x0"]), int(p["z0"])),
 			"largura": int(p["x1"]) - int(p["x0"]) + 1, "profundidade": int(p["z1"]) - int(p["z0"]) + 1,
 			"lado_porta": str(p["lado_porta"]), "extras": lados_extras, "recursos": (p["recursos"] as Array).duplicate()})
-	var dados: Dictionary = {"versao": 1, "mundo": mundo.para_salvar(), "personagens": pers, "objetos": objs,
+	var dados: Dictionary = {"versao": 2, "semente": semente_cenario, "premissa": premissa_atual, "mundo": mundo.para_salvar(), "personagens": pers, "objetos": objs,
 		"predios": preds, "alturas": alturas.duplicate()}
 	var f := FileAccess.open(Mundo.ARQUIVO_MUNDO, FileAccess.WRITE)
 	if f != null:
@@ -2158,8 +2289,8 @@ func salvar_mundo() -> void:
 func carregar_mundo() -> void:
 	if not FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
 		return
-	var dados: Variant = str_to_var(FileAccess.get_file_as_string(Mundo.ARQUIVO_MUNDO))
-	if not (dados is Dictionary) or int(dados.get("versao", 0)) != 1:
+	var dados: Dictionary = _ler_salvo()
+	if dados.is_empty():
 		return
 	_carregando = true
 
@@ -2410,7 +2541,7 @@ func interpretar_movimento(texto: String) -> String:
 		var quer_sair: bool = t.contains(" saio") or t.contains(" sair") or t.contains(" saindo")
 		destinos.append(fora_c if (quer_sair or (dentro_agora and not t.contains(" entro"))) else dentro_c)
 	var previos: Dictionary = {}
-	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_EXPLORACAO, true, previos)
+	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_EXPLORACAO * 2, true, previos)
 	var destino: Vector2i = CELULA_INVALIDA
 	if escolhido["tipo"] == "predio":
 		for d2 in destinos:
@@ -2440,7 +2571,7 @@ func interpretar_movimento(texto: String) -> String:
 			if destino != CELULA_INVALIDA:
 				break
 	if destino == CELULA_INVALIDA:
-		return "FATO DO JOGO: %s tentou ir até %s mas NÃO conseguiu (caminho bloqueado ou longe demais, mais de %d passos). Kuzin continua onde estava." % [nome_kuzin, escolhido["nome"], LIMITE_EXPLORACAO]
+		return "FATO DO JOGO: %s tentou ir até %s mas NÃO conseguiu (caminho bloqueado ou longe demais, mais de %d passos). Kuzin continua onde estava." % [nome_kuzin, escolhido["nome"], LIMITE_EXPLORACAO * 2]
 	if destino == celula_jogador:
 		return "FATO DO JOGO: %s já estava ao lado de %s. Não precisou andar." % [nome_kuzin, escolhido["nome"]]
 	var passos: int = int(alcance[destino])

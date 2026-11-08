@@ -11,10 +11,13 @@ signal status_mudou(texto: String)
 signal mestre_pronto()
 signal ocupado_mudou(ocupado: bool)
 signal mestre_falou(texto: String)
+signal npc_falou(nome: String, texto: String)      # um NPC respondeu numa conversa
+signal conversa_mudou(nome: String)                # "" = ninguém (conversa acabou)
 
 const SERVIDOR_WINDOWS: String = "llama_bin/llama/llama-server.exe"
 const SERVIDOR_LINUX: String = "llama_bin/llama/llama-server"
 const MODELO: String = "models/llama-3.2-3b-instruct-q4_k_m.gguf"
+const MestreFalso = preload("res://scripts/mestre_falso.gd")
 const PORTA: int = 8765
 const CONTEXTO: int = 8192
 const MAX_TOKENS_RESPOSTA: int = 700
@@ -32,6 +35,7 @@ COMO NARRAR:
 - Se o jogador FAZ uma pergunta (onde estou? quem está aqui? o que vejo?), responda como um mestre responderia a uma dúvida: direto, dizendo o que Kuzin percebe, com detalhes úteis (onde ele está, quem está por perto e o que está fazendo). Sem comandos.
 - Use SOMENTE lugares, objetos e personagens que existem no estado. Não invente lugares novos.
 - Nunca decida falas, ações ou pensamentos de Kuzin. Termine abrindo espaço para a próxima ação dele.
+- Kuzin SÓ se move de verdade quando o jogo informa um "FATO DO JOGO" ou quando você usa o comando mover nele. NUNCA narre Kuzin andando sem um desses dois.
 - Respeite as DISTÂNCIAS da seção PROXIMIDADE DE KUZIN: só quem está "ao lado" pode sussurrar ou tocar em Kuzin; quem está "longe" não pode. Não coloque Kuzin ao lado de alguém que o estado mostra distante. Se um NPC precisa chegar perto, mova-o antes com o comando mover.
 - Quando um personagem fala, escreva a FALA entre aspas. Nunca escreva "sussurrou algo" ou "disse alguma coisa" sem dizer o quê.
 - Não comece luta sem motivo claro. Só use iniciar_combate se um inimigo realmente atacar ou ameaçar Kuzin de perto, ou se Kuzin atacar; preencha o campo "texto" com o MOTIVO (quem fez o quê) e explique isso na narração.
@@ -40,7 +44,7 @@ MODOS:
 - EXPLORAÇÃO (sem turnos): se Kuzin quer ir a algum lugar, use mover com alvo Kuzin para uma célula LIVRE perto do destino (ao lado do objeto/pessoa; para sair de um prédio passe pela porta). Se uma luta começa ou Kuzin ataca, use iniciar_combate.
 - COMBATE: o jogo cuida dos turnos. Você só narra e pode mudar a intenção de NPCs.
 COMANDOS (campo "acao"; use "comandos":[] se nada muda no mundo):
-- mover (alvo, x, z) | colocar (alvo=nome novo, modelo, papel, x, z) | remover (alvo)
+- mover (alvo, x, z) | colocar (alvo=nome novo, modelo, papel, x, z; para papel aliado/neutro SEMPRE preencha também "personalidade" (como ele é), "sabe" (uma coisa que ele pode contar) e "segredo" (algo que só conta a quem confia nele)) | remover (alvo)
 - intencao (alvo, estado: padrao|fugir|parado|agressivo) | atividade (alvo, texto curto do que faz agora)
 - criar_objeto (alvo=nome novo, modelo, x, z) | mover_objeto (alvo, para=personagem OU x e z) | dar_item (alvo=objeto, para=personagem, objeto a 1 célula ou menos) | soltar_item (alvo) | mudar_estado (alvo, estado) | remover_objeto (alvo)
 - gerar_construcao (alvo=nome da construção, modelo=taverna|casa|armazem|templo, tamanho=pequeno|medio|grande, para=personagem ou lugar de referência, extras=[porta_dos_fundos, porta_lateral, palco, alcapao, lareira]): o JOGO desenha a planta (cada vez diferente) e depois te informa o que ela contém. Use extras só se a história pedir (ex.: alguém entra pela porta dos fundos -> extras ["porta_dos_fundos"]).
@@ -61,6 +65,10 @@ var _historico: Array = []          # [{role, content}]
 var _fatos: Array = []
 var _feedback_pendente: String = ""
 var _http: HTTPRequest
+var modo_rapido: bool = false       # true = Mestre de mentirinha (instantâneo, sem IA) só para testar o jogo
+var _falso = MestreFalso.new()
+var _npc_conversa: String = ""      # nome do NPC com quem Kuzin conversa agora ("" = falando com o Mestre)
+var _semente_campanha: int = 0      # cenário a que esta memória pertence
 
 
 func _ready() -> void:
@@ -68,7 +76,11 @@ func _ready() -> void:
 	_http.timeout = 180.0
 	add_child(_http)
 	_carregar_campanha()
-	iniciar_servidor()
+	if not modo_rapido:
+		iniciar_servidor()
+	else:
+		_status("Modo RÁPIDO ligado (sem IA). Digite /rapido para voltar à IA.")
+		mestre_pronto.emit()
 
 
 func _notification(what: int) -> void:
@@ -77,7 +89,22 @@ func _notification(what: int) -> void:
 
 
 func esta_pronto() -> bool:
-	return _pronto
+	return _pronto or modo_rapido
+
+
+func definir_modo_rapido(valor: bool) -> void:
+	modo_rapido = valor
+	_salvar_campanha()
+	if valor:
+		_status("Modo RÁPIDO ligado: respostas instantâneas, SEM IA (só para testar o jogo).")
+		mestre_pronto.emit()
+	elif _pronto:
+		_status("Modo IA ligado.")
+		mestre_pronto.emit()
+	else:
+		_status("Modo IA ligado. Carregando a IA local...")
+		if _pid <= 0:
+			iniciar_servidor()
 
 
 func esta_ocupado() -> bool:
@@ -191,29 +218,258 @@ func _eh_pergunta(texto: String) -> bool:
 
 
 func jogador_agiu(texto: String) -> void:
-	if _ocupado or not _pronto:
+	if _ocupado or not esta_pronto():
+		return
+	_sincronizar_com_mundo()
+	# Está conversando com um NPC? Então o texto é a fala de Kuzin para ele.
+	if _npc_conversa != "":
+		await _conversar(texto)
 		return
 	if _eh_pergunta(texto):
+		if modo_rapido:
+			await _responder_pergunta_rapido(texto)
+			return
 		var pedido: String = "O JOGADOR FEZ UMA PERGUNTA (ele quer entender melhor, NÃO está agindo): \"" + texto + "\"\nResponda DIRETAMENTE à pergunta, como um mestre tirando uma dúvida na mesa, usando só o que existe no estado do tabuleiro. NÃO continue a história, NÃO faça ninguém agir ou falar, NÃO narre ações de Kuzin. Se não houver nada assim, diga isso. comandos: []."
 		await _consultar(pedido, texto, "pergunta")
+		return
+	# 1) O JOGO tenta entender se o jogador quer ANDAR e já move o Kuzin (a IA não decide isso).
+	var tab: Node = _tabuleiro()
+	var fato: String = tab.interpretar_movimento(texto) if tab != null else ""
+	if fato != "":
+		_definir_ocupado(true)
+		await get_tree().create_timer(1.0).timeout    # deixa a animação de andar acontecer
+		_definir_ocupado(false)
+		_feedback_pendente = fato
+	# 2) Quer FALAR com alguém? Então começa uma conversa com esse NPC.
+	if tab != null and _quer_falar(texto):
+		var npc: String = tab.npc_citado_no_texto(texto)
+		if npc != "":
+			var erro: String = tab.pode_conversar_com(npc)
+			if erro != "":
+				mestre_falou.emit((fato.replace("FATO DO JOGO: ", "") + " " if fato != "" else "") + erro)
+				return
+			_entrar_na_conversa(npc)
+			await _conversar(texto)
+			return
+	if modo_rapido:
+		await _agir_rapido(texto, fato, false)
+		return
+	var pedido_acao: String = "JOGADOR (Kuzin) diz/faz: " + texto
+	if fato != "":
+		pedido_acao += "\n" + fato + "\n(Isso JÁ ACONTECEU no tabuleiro e é a verdade absoluta. Narre exatamente isso, sem contradizer e sem mover Kuzin de novo. Se ele falhou, narre a falha.)"
+	await _consultar(pedido_acao, texto, "acao")
+
+
+const VERBOS_DE_FALAR: Array[String] = ["falo", "falar", "fala com", "converso", "conversar", "pergunto", "perguntar", "cumprimento", "saudo", "digo", "dirijo a palavra", "chamo"]
+
+
+func _quer_falar(texto: String) -> bool:
+	var tab: Node = _tabuleiro()
+	var t: String = tab._normalizar(texto) if tab != null else texto.to_lower()
+	for v in VERBOS_DE_FALAR:
+		if t.contains(v):
+			return true
+	return false
+
+
+func forcar_evento() -> void:
+	if not modo_rapido:
+		_status("O comando /evento só funciona no modo rápido (/rapido).")
+		return
+	if _ocupado:
+		return
+	await _agir_rapido("(evento forçado)", "", true)
+
+
+# ---------------------------------------------------------------
+# CONVERSA COM NPC
+# ---------------------------------------------------------------
+func conversa_atual() -> String:
+	return _npc_conversa
+
+
+func comecar_conversa(nome_digitado: String) -> void:
+	var tab: Node = _tabuleiro()
+	if tab == null:
+		return
+	var nome: String = tab.nome_exato_do_npc(nome_digitado)
+	if nome == "":
+		_status("Não existe ninguém chamado '%s'." % nome_digitado)
+		return
+	var erro: String = tab.pode_conversar_com(nome)
+	if erro != "":
+		mestre_falou.emit(erro)
+		return
+	_entrar_na_conversa(nome)
+
+
+func _entrar_na_conversa(nome: String) -> void:
+	_npc_conversa = nome
+	var tab: Node = _tabuleiro()
+	if tab != null:
+		tab.registrar_evento("conversa", "Kuzin começou a conversar com %s." % nome)
+	conversa_mudou.emit(nome)
+
+
+func encerrar_conversa() -> void:
+	if _npc_conversa == "":
+		return
+	var nome: String = _npc_conversa
+	_npc_conversa = ""
+	conversa_mudou.emit("")
+	mestre_falou.emit("Kuzin encerra a conversa com %s." % nome)
+
+
+func _conversar(texto: String) -> void:
+	var tab: Node = _tabuleiro()
+	var nome: String = _npc_conversa
+	var t: String = texto.strip_edges().to_lower()
+	for adeus in ["tchau", "adeus", "ate logo", "até logo", "encerro a conversa", "/sair", "sair"]:
+		if t == adeus or t.begins_with(adeus + " "):
+			encerrar_conversa()
+			return
+	if tab == null:
+		return
+	var erro: String = tab.pode_conversar_com(nome)
+	if erro != "":
+		_npc_conversa = ""
+		conversa_mudou.emit("")
+		mestre_falou.emit(erro + " A conversa terminou.")
+		return
+	_definir_ocupado(true)
+	_status("%s está respondendo..." % nome)
+	var info: Dictionary = tab.processar_fala_para_npc(nome, texto)
+	var fala: String = ""
+	if modo_rapido:
+		await get_tree().create_timer(0.3).timeout
+		fala = _falso.responder_npc(tab, nome, texto, info)
 	else:
-		await _consultar("JOGADOR (Kuzin) diz/faz: " + texto, texto, "acao")
+		fala = await _fala_do_npc_ia(tab, nome, texto)
+		for seg in info.get("liberados", []):
+			if _fala_contem(fala, str(seg)):
+				tab.marcar_segredo_contado(nome, str(seg))
+	if fala == "":
+		_status("ERRO: a IA não respondeu.")
+		mestre_falou.emit("(%s ficou em silêncio. Tente de novo.)" % nome)
+		_definir_ocupado(false)
+		return
+	npc_falou.emit(nome, fala)
+	_historico.append({"role": "user", "content": "Kuzin diz a %s: %s" % [nome, texto]})
+	_historico.append({"role": "assistant", "content": "%s responde: %s" % [nome, fala]})
+	while _historico.size() > MENSAGENS_NO_HISTORICO:
+		_historico.pop_front()
+	_salvar_campanha()
+	_status("Pronto.")
+	_definir_ocupado(false)
+
+
+func _fala_contem(fala: String, fato: String) -> bool:
+	var tab: Node = _tabuleiro()
+	var f: String = tab._normalizar(fala)
+	var acertos: int = 0
+	for tok in tab._normalizar(fato).split(" "):
+		if tok.length() >= 5 and f.contains(tok):
+			acertos += 1
+	return acertos >= 2
+
+
+const REGRAS_DO_NPC: String = """Você interpreta UM personagem num RPG de mesa, em português do Brasil. Responda SÓ com a fala dele, em 1 a 3 frases, em primeira pessoa, com o jeito (personalidade) dele. Pode incluir um gesto curto entre asteriscos.
+- Use apenas o que está em "O QUE VOCÊ SABE" e os segredos liberados. Se perguntarem algo que você não sabe, diga que não sabe, do seu jeito.
+- NÃO invente fatos novos sobre o mundo, lugares, objetos ou pessoas. NÃO conte segredos que não estão listados como liberados.
+- NÃO fale nem aja por Kuzin. NÃO narre a cena; só fale como o personagem.
+- Responda em JSON: {"narracao": "a fala do personagem"}."""
+
+
+func _fala_do_npc_ia(tab: Node, nome: String, texto: String) -> String:
+	var sistema: String = REGRAS_DO_NPC + "\n" + tab.ficha_para_conversa(nome)
+	var cel: Vector2i = tab._achar_exato(nome)
+	if cel != tab.CELULA_INVALIDA:
+		sistema += "CENA: " + tab.lugar_texto(cel) + ". Kuzin (meio-elfo ladino) conversa com você.\n"
+	var mensagens: Array = [{"role": "system", "content": sistema}]
+	mensagens.append_array(_historico.slice(maxi(_historico.size() - 6, 0)))
+	mensagens.append({"role": "user", "content": "Kuzin diz a você: " + texto})
+	var schema: Dictionary = {"type": "object", "properties": {"narracao": {"type": "string"}}, "required": ["narracao"]}
+	var resposta: Dictionary = await _pedir_com_coerencia(mensagens, schema, 0.8, tab)
+	return str(resposta.get("narracao", "")).strip_edges()
+
+
+# ---------------------------------------------------------------
+# MODO RÁPIDO (Mestre de mentirinha)
+# ---------------------------------------------------------------
+func _responder_pergunta_rapido(texto: String) -> void:
+	_definir_ocupado(true)
+	await get_tree().create_timer(0.2).timeout
+	var narr: String = _falso.responder_pergunta(_tabuleiro(), texto)
+	mestre_falou.emit(narr)
+	_registrar_no_historico(texto, narr)
+	_definir_ocupado(false)
+
+
+func _agir_rapido(texto: String, fato: String, forcar: bool) -> void:
+	_definir_ocupado(true)
+	var tab: Node = _tabuleiro()
+	var plano: Dictionary = _falso.planejar(tab, texto, fato, forcar)
+	if not (plano["comandos"] as Array).is_empty():
+		await _executar_comandos(plano["comandos"])
+	var feedback: String = _feedback_pendente
+	var narr: String = _falso.narrar(tab, plano, feedback)
+	_feedback_pendente = ""
+	mestre_falou.emit(narr)
+	_registrar_no_historico(texto, narr)
+	_definir_ocupado(false)
+
+
+func _registrar_no_historico(pedido: String, narracao: String) -> void:
+	_historico.append({"role": "user", "content": pedido})
+	_historico.append({"role": "assistant", "content": narracao})
+	while _historico.size() > MENSAGENS_NO_HISTORICO:
+		_historico.pop_front()
+	_salvar_campanha()
+
+
+# Se o cenário mudou (partida nova), a memória do Mestre é de outra história: esquece
+func _sincronizar_com_mundo() -> void:
+	var tab: Node = _tabuleiro()
+	if tab == null:
+		return
+	if int(tab.semente_cenario) != _semente_campanha:
+		_historico.clear()
+		_fatos.clear()
+		_feedback_pendente = ""
+		_npc_conversa = ""
+		_falso = MestreFalso.new()
+		_semente_campanha = int(tab.semente_cenario)
+		_salvar_campanha()
 
 
 func narrar_turno(eventos: Array) -> void:
-	if _ocupado or not _pronto:
+	if _ocupado or not esta_pronto():
+		return
+	if modo_rapido:
+		mestre_falou.emit(" ".join(eventos.map(func(e): return str(e))))
 		return
 	var lista: String = "\n".join(eventos.map(func(e): return "- " + str(e)))
 	await _consultar(TEXTO_TURNO_NPCS + "\n" + lista, "(turno dos NPCs)")
 
 
 func iniciar_aventura() -> void:
-	if _ocupado or not _pronto:
+	if _ocupado or not esta_pronto():
+		return
+	for i in range(30):                     # espera o tabuleiro existir
+		if _tabuleiro() != null:
+			break
+		await get_tree().process_frame
+	_sincronizar_com_mundo()
+	if modo_rapido:
+		mestre_falou.emit(_falso.abertura(_tabuleiro()))
 		return
 	await _consultar(TEXTO_ABERTURA, "(início)", "abertura")
 
 
 func nova_campanha() -> void:
+	_npc_conversa = ""
+	conversa_mudou.emit("")
+	_falso = MestreFalso.new()
 	_historico.clear()
 	_fatos.clear()
 	_feedback_pendente = ""
@@ -316,7 +572,11 @@ func _pedir_com_coerencia(mensagens: Array, schema: Dictionary, temperatura: flo
 
 
 func _montar_mensagens(pedido: String, estado: String) -> Array:
-	var sistema: String = REGRAS_DO_MESTRE + "\nPREMISSA: " + PREMISSA
+	var tab_p: Node = _tabuleiro()
+	var premissa: String = PREMISSA
+	if tab_p != null and str(tab_p.premissa_atual) != "":
+		premissa = str(tab_p.premissa_atual)
+	var sistema: String = REGRAS_DO_MESTRE + "\nPREMISSA: " + premissa
 	if not _fatos.is_empty():
 		sistema += "\nFATOS JÁ OCORRIDOS:\n- " + "\n- ".join(_fatos)
 	var mensagens: Array = [{"role": "system", "content": sistema}]
@@ -351,6 +611,9 @@ func _schema_da_resposta(tab: Node) -> Dictionary:
 		"properties": {
 			"acao": {"type": "string", "enum": ["mover", "colocar", "remover", "intencao", "atividade", "criar_objeto", "mover_objeto", "dar_item", "soltar_item", "mudar_estado", "remover_objeto", "gerar_construcao", "iniciar_combate", "encerrar_combate"]},
 			"texto": {"type": "string"},
+			"personalidade": {"type": "string"},
+			"sabe": {"type": "string"},
+			"segredo": {"type": "string"},
 			"alvo": {"type": "string"},
 			"para": {"type": "string"},
 			"modelo": {"type": "string", "enum": modelos},
@@ -441,7 +704,7 @@ func _salvar_campanha() -> void:
 	var f := FileAccess.open(ARQUIVO_CAMPANHA, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify({"historico": _historico, "fatos": _fatos}))
+	f.store_string(JSON.stringify({"historico": _historico, "fatos": _fatos, "semente": _semente_campanha, "rapido": modo_rapido}))
 
 
 func _carregar_campanha() -> void:
@@ -451,3 +714,5 @@ func _carregar_campanha() -> void:
 	if dados is Dictionary:
 		_historico = dados.get("historico", [])
 		_fatos = dados.get("fatos", [])
+		_semente_campanha = int(dados.get("semente", 0))
+		modo_rapido = bool(dados.get("rapido", false))

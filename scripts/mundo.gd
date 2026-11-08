@@ -89,22 +89,22 @@ func verbos_de(modelo: String, estado: String, trancado: bool, dados: Dictionary
 const CONHECIMENTO_POR_NOME: Dictionary = {
 	"Taberneiro Barnaby": {
 		"personalidade": "simpático, falante e um pouco medroso; adora uma boa história",
-		"sabe": ["A taverna se chama Javali Dourado e é dele.",
-			"Serve cerveja e comida no balcão.",
+		"sabe": ["Minha taverna se chama Javali Dourado.",
+			"Sirvo cerveja e comida no balcão.",
 			"Nos últimos dias goblins foram vistos rondando a vila.",
 			"O padeiro Joaquim mora na casa do outro lado da praça."],
-		"esconde": [{"fato": "O Baú da taverna guarda o dinheiro da semana.", "atitude_minima": 2}],
+		"esconde": [{"fato": "O dinheiro da semana está guardado no Baú da taverna.", "atitude_minima": 2}],
 	},
 	"Guarda Elara": {
 		"personalidade": "séria, desconfiada e leal à vila",
-		"sabe": ["Ela está de guarda na taverna.",
-			"Um orc e goblins estão do lado de fora da vila e ela os considera uma ameaça."],
-		"esconde": [{"fato": "Ela acha que os goblins têm alguém ajudando de dentro da vila.", "atitude_minima": 2}],
+		"sabe": ["Estou de guarda na taverna.",
+			"Um orc e goblins estão do lado de fora da vila e eu os considero uma ameaça."],
+		"esconde": [{"fato": "Acho que os goblins têm alguém ajudando de dentro da vila.", "atitude_minima": 2}],
 	},
 	"Padeiro Joaquim": {
 		"personalidade": "tímido e trabalhador; assusta fácil",
-		"sabe": ["Ele faz pão na Casa do Padeiro.", "Tem um saco de farinha e um baú na casa."],
-		"esconde": [{"fato": "Ele está com muito medo dos goblins e pensa em fugir da vila.", "atitude_minima": 1}],
+		"sabe": ["Faço pão na Casa do Padeiro.", "Tenho um saco de farinha e um baú em casa."],
+		"esconde": [{"fato": "Estou com muito medo dos goblins e penso em fugir da vila.", "atitude_minima": 1}],
 	},
 }
 
@@ -149,6 +149,20 @@ func descrever_npc(nome: String, ficha: Dictionary) -> String:
 	for e in esconde:
 		var contado: bool = (c.get("revelado", []) as Array).has(str(e["fato"]))
 		t += "  Segredo (%s): %s [só conta se a atitude for %d ou mais]\n" % ["JÁ CONTOU" if contado else "ainda guardado", str(e["fato"]), int(e["atitude_minima"])]
+	return t
+
+
+# Ficha para a IA falar COMO o NPC. Segredos que ainda não foram liberados NÃO aparecem aqui:
+# a IA não pode vazar o que não sabe.
+func ficha_para_conversa(nome: String, ficha: Dictionary) -> String:
+	var c: Dictionary = ficha.get("conhecimento", {})
+	var atitude: int = int(c.get("atitude", 0))
+	var t: String = "VOCÊ É %s (%s). Personalidade: %s. Sua atitude em relação a Kuzin: %s.\n" % [nome, str(ficha.get("classe", "")), str(c.get("personalidade", "")), descricao_da_atitude(atitude)]
+	var sabe: Array = c.get("sabe", [])
+	t += "O QUE VOCÊ SABE: " + (" | ".join(sabe) if not sabe.is_empty() else "nada de especial; só conversa comum.") + "\n"
+	for e in c.get("esconde", []):
+		if atitude >= int(e["atitude_minima"]):
+			t += "SEGREDO QUE VOCÊ PODE CONTAR AGORA (se fizer sentido na conversa): %s\n" % str(e["fato"])
 	return t
 
 

@@ -32,6 +32,9 @@ func _ready() -> void:
 	_mestre.status_mudou.connect(func(t: String) -> void: _msg("Sistema", t))
 	_mestre.mestre_falou.connect(func(t: String) -> void:
 		_msg("Mestre", t))
+	_mestre.npc_falou.connect(func(nome: String, fala: String) -> void:
+		_msg(nome, fala))
+	_mestre.conversa_mudou.connect(_ao_mudar_conversa)
 	_mestre.ocupado_mudou.connect(_ao_mudar_ocupado)
 	_mestre.mestre_pronto.connect(_ao_ficar_pronto)
 	if _mestre.esta_pronto():
@@ -49,6 +52,15 @@ func _ao_ficar_pronto() -> void:
 	if not _iniciou:
 		_iniciou = true
 		_mestre.iniciar_aventura()
+
+
+func _ao_mudar_conversa(nome: String) -> void:
+	if nome == "":
+		input_texto.placeholder_text = "Fale com o Mestre... (Enter envia)"
+		_msg("Sistema", "Conversa encerrada. Você voltou a falar com o Mestre.")
+	else:
+		input_texto.placeholder_text = "Falando com %s... (digite 'tchau' ou /sair para encerrar)" % nome
+		_msg("Sistema", "Você está conversando com %s. O que você escrever agora é a fala de Kuzin. Digite 'tchau' ou /sair para voltar ao Mestre." % nome)
 
 
 func _ao_mudar_ocupado(ocupado: bool) -> void:
@@ -93,6 +105,19 @@ func _on_enviar() -> void:
 		_msg("Sistema", "Nova campanha. (Aperte F9 para reiniciar também o tabuleiro.)")
 		_mestre.iniciar_aventura()
 		return
+	if texto == "/rapido":
+		_mestre.definir_modo_rapido(not _mestre.modo_rapido)
+		return
+	if texto == "/evento":
+		_msg("Você", "(avançar a história)")
+		_mestre.forcar_evento()
+		return
+	if texto.begins_with("/falar "):
+		_mestre.comecar_conversa(texto.substr(7).strip_edges())
+		return
+	if texto == "/sair":
+		_mestre.encerrar_conversa()
+		return
 	if texto == "/diario":
 		var tab_d: Node = get_tree().get_first_node_in_group("tabuleiro")
 		if tab_d != null:
@@ -107,7 +132,7 @@ func _on_enviar() -> void:
 		_mostrar_cena()
 		return
 	if texto == "/ajuda":
-		_msg("Sistema", "Comandos: /onde (resumo da cena), /diario (o que já aconteceu), /npc Nome (ficha de conhecimento), /notas (notas da IA), /nova (nova campanha). Enter envia, Shift+Enter pula linha. Esc ou clicar fora solta o chat.")
+		_msg("Sistema", "Comandos: /rapido (liga/desliga o Mestre instantâneo de teste), /evento (avança a história no modo rápido), /falar Nome e /sair (conversa com NPC), /onde (resumo da cena), /diario (o que já aconteceu), /npc Nome (ficha), /notas (notas da IA), /nova (nova campanha). Enter envia, Shift+Enter pula linha. Esc ou clicar fora solta o chat.")
 		return
 	if texto == "/notas":
 		var tab: Node = get_tree().get_first_node_in_group("tabuleiro")

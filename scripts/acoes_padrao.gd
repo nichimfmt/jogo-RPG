@@ -107,7 +107,7 @@ static func _executar(tab: Node, verbo: String, clausula: String) -> Dictionary:
 			var cel: Vector2i = tab._achar_por_nome(npc2)
 			if not tab.alvo_visivel(cel):
 				return {"ok": false, "texto": "Você não consegue ver %s daqui." % npc2}
-			return {"ok": true, "texto": "Você observa %s (%s)." % [npc2, str(tab.ficha_em(cel).get("classe", "")).strip_edges()]}
+			return {"ok": true, "texto": "Você observa %s (%s)." % [npc2, tab.titulo_publico(tab.ficha_em(cel))]}
 	# ---- ações da própria pessoa ----
 	if verbo == "esconder":
 		return _esconder(tab)

@@ -32,12 +32,12 @@ const CONSTRUCOES: Array = [
 
 
 func abertura(tab: Node) -> String:
-	var base: String = ""
-	if tab != null and str(tab.premissa_atual) != "":
-		base = str(tab.premissa_atual)
-	else:
-		base = "A aventura começa."
-	return "%s\n(MODO RÁPIDO: respostas instantâneas, sem IA.) O que Kuzin faz? Tente: \"vou até <objeto ou pessoa>\", \"falo com <pessoa>\", \"olho ao redor\", ou /evento para avançar a história." % base
+	if tab != null and tab.ensaio_taverna != null:
+		return tab.premissa_atual
+	var base: String = tab.resumo_da_cena() if tab != null else "A aventura começa."
+	if tab != null and str(tab.boato_inicial) != "":
+		base += " Na vila, corre um boato. " + str(tab.boato_inicial)
+	return base + " O que Kuzin faz? Você pode explorar, examinar o lugar ou falar com alguém por perto."
 
 
 # ---------------------------------------------------------------
@@ -196,27 +196,7 @@ func _pers_de(tab: Node, nome: String) -> String:
 
 
 func _descrever_ao_redor(tab: Node) -> String:
-	if tab == null or tab.celula_jogador == tab.CELULA_INVALIDA:
-		return "Você olha em volta."
-	var jog: Vector2i = tab.celula_jogador
-	var t: String = "Kuzin está %s." % tab.lugar_texto(jog)
-	var perto: Array = []
-	for c in tab.pecas.keys():
-		if c == jog:
-			continue
-		perto.append("%s, %s" % [str(tab.ficha_em(c)["nome"]), str(tab._palavra_de_distancia(tab.distancia(jog, c))).split(" (")[0]])
-	if not perto.is_empty():
-		t += " Pessoas: " + "; ".join(perto) + "."
-	var objs: Array = []
-	for n in tab.objetos.keys():
-		var m: String = str(tab.objetos[n]["modelo"])
-		if m == "parede" or m == "muro" or m == "porta":
-			continue
-		if tab.distancia(jog, tab.objetos[n]["celula"]) <= 5:
-			objs.append(str(n))
-	if not objs.is_empty():
-		t += " Por perto há: " + ", ".join(objs.slice(0, 8)) + "."
-	return t
+	return tab.resumo_da_cena() if tab != null else "Você olha em volta."
 
 
 # ---------------------------------------------------------------
@@ -237,9 +217,9 @@ func responder_pergunta(tab: Node, texto: String) -> String:
 	if t.contains("quem"):
 		var nomes: Array = []
 		for c in tab.pecas.keys():
-			if c != tab.celula_jogador:
+			if c != tab.celula_jogador and tab.alvo_visivel(c):
 				nomes.append("%s (%s)" % [str(tab.ficha_em(c)["nome"]), tab._palavra_de_distancia(tab.distancia(tab.celula_jogador, c))])
-		return "Pessoas na cena: " + "; ".join(nomes) + "."
+		return "Você vê " + ", ".join(nomes) + "." if not nomes.is_empty() else "Você não vê ninguém por perto."
 	return _descrever_ao_redor(tab)
 
 

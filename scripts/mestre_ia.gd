@@ -1,5 +1,6 @@
 extends Node
 const AcoesPadrao = preload("res://scripts/acoes_padrao.gd")
+const EnsaioTaverna = preload("res://scripts/ensaio_taverna.gd")
 # ---------------------------------------------------------------
 # MESTRE_IA.GD  (Autoload com o nome EXATO: MestreIA)
 # O Mestre é a IA de TEXTO (llama-server local). Ele:
@@ -35,6 +36,7 @@ COMO NARRAR:
 - Nunca diga coordenadas, números de célula nem distâncias em números. Descreva em linguagem natural ("junto ao balcão", "perto da porta", "do outro lado da rua"). As coordenadas do estado servem só para você escolher os comandos.
 - Se o jogador FAZ uma pergunta (onde estou? quem está aqui? o que vejo?), responda como um mestre responderia a uma dúvida: direto, dizendo o que Kuzin percebe, com detalhes úteis (onde ele está, quem está por perto e o que está fazendo). Sem comandos.
 - Use SOMENTE lugares, objetos e personagens que existem no estado. Não invente lugares novos.
+- Números em nomes de objetos e níveis de ficha são referências do sistema. No relato, diga “um barril” ou “alguns barris” e use descrições como “um arqueiro goblin”. Evite revelar a identidade de inimigos desconhecidos.
 - Nunca decida falas, ações ou pensamentos de Kuzin. Termine abrindo espaço para a próxima ação dele.
 - Kuzin SÓ se move de verdade quando o jogo informa um "FATO DO JOGO". NUNCA narre Kuzin andando sem um desses dois.
 - Respeite as DISTÂNCIAS da seção PROXIMIDADE DE KUZIN: só quem está "ao lado" pode sussurrar ou tocar em Kuzin; quem está "longe" não pode. Não coloque Kuzin ao lado de alguém que o estado mostra distante. Se um NPC precisa chegar perto, mova-o antes com o comando mover.
@@ -49,7 +51,7 @@ COMANDOS (campo "acao"; use "comandos":[] se nada muda no mundo):
 - intencao (alvo, estado: padrao|fugir|parado|agressivo) | atividade (alvo, texto curto do que faz agora)
 - criar_objeto (alvo=nome novo, modelo, x, z) | mover_objeto (alvo, para=personagem OU x e z) | dar_item (alvo=objeto, para=personagem, objeto a 1 célula ou menos) | soltar_item (alvo) | mudar_estado (alvo, estado) | remover_objeto (alvo)
 - gerar_construcao (alvo=nome da construção, modelo=taverna|casa|armazem|templo, tamanho=pequeno|medio|grande, para=personagem ou lugar de referência, extras=[porta_dos_fundos, porta_lateral, palco, alcapao, lareira]): o JOGO desenha a planta (cada vez diferente) e depois te informa o que ela contém. Use extras só se a história pedir (ex.: alguém entra pela porta dos fundos -> extras ["porta_dos_fundos"]).
-- iniciar_combate (alvo="combate", texto=motivo da luta; só se algum inimigo estiver a menos de 8 passos de Kuzin) | encerrar_combate (alvo="combate")
+- iniciar_combate (alvo="combate", texto=motivo da luta; só se um inimigo avistar Kuzin a até 8 passos) | encerrar_combate (alvo="combate")
 EXEMPLO (o padeiro manda um pão): "comandos":[{"acao":"criar_objeto","alvo":"Pão quente","modelo":"pao","x":2,"z":6},{"acao":"mover_objeto","alvo":"Pão quente","para":"Kuzin"},{"acao":"dar_item","alvo":"Pão quente","para":"Kuzin"}]
 Quando o jogo apresentar os resultados dos comandos, narre apenas o que deu certo e explique as falhas sem inventar efeitos.
 REGRA DE OURO: só existe o que está no estado do tabuleiro (objetos, construções e a lista "contém"). Se algo consta em "NÃO possui" (alçapão, escada, janelas...), NÃO existe: não cite. Se quiser algo novo, crie com um comando; não invente só na narração.
@@ -75,7 +77,10 @@ func _ready() -> void:
 	_http = HTTPRequest.new()
 	_http.timeout = 35.0
 	add_child(_http)
-	_carregar_campanha()
+	if OS.get_cmdline_user_args().has(EnsaioTaverna.ARGUMENTO):
+		modo_rapido = true
+	else:
+		_carregar_campanha()
 	if not modo_rapido:
 		iniciar_servidor()
 	else:
@@ -93,6 +98,9 @@ func esta_pronto() -> bool:
 
 
 func definir_modo_rapido(valor: bool) -> void:
+	if OS.get_cmdline_user_args().has(EnsaioTaverna.ARGUMENTO):
+		_status("O teste da taverna usa resultados fixos.")
+		return
 	modo_rapido = valor
 	_salvar_campanha()
 	if valor:
@@ -231,6 +239,14 @@ func jogador_agiu(texto: String) -> void:
 	if exploracao != "":
 		_responder_resultado(texto, exploracao)
 		return
+	if tab._normalizar(texto.strip_edges()).rstrip(".!?") in ["olho ao redor", "olho em volta", "observo o lugar"]:
+		_responder_resultado(texto, tab.resumo_da_cena())
+		return
+	if tab.ensaio_taverna != null:
+		var resposta: String = tab.ensaio_taverna.responder_pergunta(tab, texto)
+		if resposta != "":
+			_responder_resultado(texto, resposta)
+			return
 	if _eh_pergunta(texto):
 		if modo_rapido or not esta_pronto():
 			await _responder_pergunta_rapido(texto)
@@ -247,8 +263,23 @@ func jogador_agiu(texto: String) -> void:
 
 	var resultados: Array[String] = []
 	for parte in AcoesPadrao.separar(texto):
+		var acao: String = parte
+		if tab.ensaio_taverna != null:
+			var normalizada: String = tab.ensaio_taverna.normalizar_acao(tab, parte)
+			if normalizada.begins_with("vvou "):
+				acao = normalizada.substr(1)
+			var ensaio: Dictionary = tab.ensaio_taverna.resolver(tab, parte)
+			if not ensaio.is_empty():
+				resultados.append(ensaio["texto"])
+				if not bool(ensaio["ok"]):
+					break
+				continue
+		var espera: String = tab.esperar_na_cena(parte)
+		if espera != "":
+			resultados.append(espera)
+			continue
 		var origem: Vector2i = tab.celula_jogador
-		var fato: String = tab.interpretar_movimento(parte).trim_prefix("FATO DO JOGO: ")
+		var fato: String = tab.interpretar_movimento(acao).trim_prefix("FATO DO JOGO: ")
 		if fato != "":
 			resultados.append(fato)
 			if origem != tab.celula_jogador:
@@ -285,6 +316,8 @@ func jogador_agiu(texto: String) -> void:
 
 	if not resultados.is_empty():
 		_responder_resultado(texto, " ".join(resultados))
+	elif tab.ensaio_taverna != null:
+		mestre_falou.emit("Fiquei em dúvida sobre o que Kuzin quer fazer. Você pode dizer para onde quer ir, com quem quer falar ou o que quer examinar. Se perdeu o fio, pergunte “qual é o objetivo?”.")
 	elif modo_rapido or not esta_pronto():
 		mestre_falou.emit("Não entendi a ação. Tente dizer o que você faz e qual é o alvo.")
 	else:
@@ -313,6 +346,9 @@ func _quer_falar(texto: String) -> bool:
 
 
 func forcar_evento() -> void:
+	if OS.get_cmdline_user_args().has(EnsaioTaverna.ARGUMENTO):
+		_status("O teste da taverna avança pelas ações de Kuzin.")
+		return
 	if not modo_rapido:
 		_status("O comando /evento só funciona no modo rápido (/rapido).")
 		return
@@ -376,14 +412,21 @@ func _conversar(texto: String) -> void:
 		conversa_mudou.emit("")
 		mestre_falou.emit(erro + " A conversa terminou.")
 		return
+	if tab.ensaio_taverna != null and nome == EnsaioTaverna.MIRA:
+		var acao: String = tab.ensaio_taverna.normalizar_acao(tab, texto)
+		if acao in ["mostro o bilhete", "mostro o bilhete a voce", "mostro meu bilhete"]:
+			acao = "mostro o bilhete a mira"
+		if acao.begins_with("mostro ") and acao.contains("bilhete"):
+			var resultado: Dictionary = tab.ensaio_taverna.resolver(tab, acao)
+			if not resultado.is_empty():
+				_responder_resultado(texto, resultado["texto"])
+				return
 	_definir_ocupado(true)
 	_status("%s está respondendo..." % nome)
 	var info: Dictionary = tab.processar_fala_para_npc(nome, texto)
 	tab.avancar_relogio(5)
-	var fala: String = ""
-	if modo_rapido or not esta_pronto():
-		fala = _falso.responder_npc(tab, nome, texto, info)
-	else:
+	var fala: String = tab.ensaio_taverna.resposta_npc(tab, nome, texto) if tab.ensaio_taverna != null else ""
+	if fala == "" and not modo_rapido and esta_pronto():
 		fala = await _fala_do_npc_ia(tab, nome, texto)
 		for seg in info.get("liberados", []):
 			if _fala_contem(fala, str(seg)):
@@ -703,6 +746,8 @@ func _executar_comandos(comandos: Array) -> void:
 # SALVAR / CARREGAR
 # ---------------------------------------------------------------
 func _salvar_campanha() -> void:
+	if OS.get_cmdline_user_args().has(EnsaioTaverna.ARGUMENTO):
+		return
 	var f := FileAccess.open(ARQUIVO_CAMPANHA, FileAccess.WRITE)
 	if f == null:
 		return

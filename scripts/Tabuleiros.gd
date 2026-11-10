@@ -71,6 +71,7 @@ Chat: /onde | /notas | /nova | Esc ou clicar fora solta o chat"""
 const CRIAR_CENARIO_DE_TESTE: bool = true
 # Para jogar num mapa feito por você (veja res://mapas/vila_exemplo.txt), coloque o caminho aqui. Vazio = o jogo gera um mapa novo.
 const MAPA_MANUAL: String = ""
+const EnsaioTaverna = preload("res://scripts/ensaio_taverna.gd")
 const MapaTexto = preload("res://scripts/gerador_mapa_texto.gd")
 const CENARIO_ALEATORIO: bool = true                 # true = cada partida nova tem um cenário NOVO; false = cenário fixo de teste (Taverna Javali Dourado)
 const ORIGEM_CENARIO: Vector2i = Vector2i(10, 8)   # onde o cenário de teste começa no mapa grande
@@ -205,6 +206,7 @@ var turno_em_andamento: bool = false
 # MODO DE JOGO (igual à mesa): "exploracao" = conversa com o Mestre, sem turnos;
 # "combate" = ordem de iniciativa, cada um age no seu turno.
 var semente_cenario: int = 0                # a mesma semente gera sempre o mesmo cenário inicial (o jogo salvo usa isso)
+var boato_inicial: String = ""
 var premissa_atual: String = ""             # texto da situação inicial que o Mestre lê
 var mundo = Mundo.new()                     # propriedades dos itens, fichas de conhecimento e diário
 var _registro_ativo: bool = false           # só registra no diário depois que o cenário inicial está pronto
@@ -215,8 +217,10 @@ var modo: String = "exploracao"
 var ordem_iniciativa: Array = []            # nomes, do mais rápido ao mais lento
 var ator_atual: String = ""
 const RAIO_CENA: int = 15
+const ALCANCE_CLIQUE_PORTA: int = 3
 var centro_cena: Vector2i = CELULA_INVALIDA
 var exploracao_liberada: bool = false
+var ensaio_taverna: EnsaioTaverna
 var minutos_do_mundo: int = 8 * 60
 var agendas: Dictionary = {}
 var legenda_visivel: bool = false
@@ -272,7 +276,11 @@ func _ready() -> void:
 	indice_distancia = maxi(OPCOES_DISTANCIA.find(distancia_maxima), 0)
 	movimento_restante = distancia_maxima
 
-	if CRIAR_CENARIO_DE_TESTE:
+	if OS.get_cmdline_user_args().has(EnsaioTaverna.ARGUMENTO):
+		ensaio_taverna = EnsaioTaverna.new()
+		premissa_atual = ensaio_taverna.montar(self)
+		exploracao_liberada = true
+	elif CRIAR_CENARIO_DE_TESTE:
 		if CENARIO_ALEATORIO:
 			var salvo: Dictionary = _ler_salvo()
 			if semente_cenario == 0:
@@ -535,6 +543,52 @@ func _de_predio(nome: String) -> String:
 
 
 # Descreve o lugar em linguagem natural: "dentro da Taverna, junto ao Balcão"
+const NOMES_DE_CENA: Dictionary = {
+	"barril": ["um barril", "barris"],
+	"caixote": ["um caixote", "caixotes"],
+	"mesa": ["uma mesa", "mesas"],
+	"cadeira": ["uma cadeira", "cadeiras"],
+	"balcao": ["um balcão", "balcões"],
+	"bau": ["um baú", "baús"],
+	"porta": ["uma porta", "portas"],
+	"fogueira": ["uma fogueira", "fogueiras"],
+	"tocha": ["uma tocha", "tochas"],
+	"pedra": ["uma pedra", "pedras"],
+}
+
+
+func nome_publico_objeto(nome: String, quantidade: int = 1) -> String:
+	if nome.begins_with("Poço"):
+		return "um poço"
+	if nome.begins_with("Lareira"):
+		return "uma lareira"
+	if nome.begins_with("Saco de farinha"):
+		return "um saco de farinha"
+	var modelo: String = str(objetos[nome]["modelo"])
+	if NOMES_DE_CENA.has(modelo):
+		return NOMES_DE_CENA[modelo][0 if quantidade == 1 else 1]
+	var partes: PackedStringArray = nome.rsplit(" ", true, 1)
+	return partes[0] if partes.size() == 2 and partes[1].is_valid_int() else nome
+
+
+func titulo_publico(ficha: Dictionary) -> String:
+	var classe: String = str(ficha.get("classe", ""))
+	match str(ficha.get("modelo", "")):
+		"goblin":
+			return "Guerreiro goblin"
+		"goblin_arqueiro":
+			return "Arqueiro goblin"
+		"goblin_xama":
+			return "Xamã goblin"
+		"chefe_goblin":
+			return "Chefe goblin"
+		"guarda":
+			return "Guarda da vila"
+	if str(ficha.get("lado", "")) == "jogador":
+		return classe
+	return classe.split(" Nível ", true, 1)[0].trim_prefix("Humano ").trim_prefix("Humana ")
+
+
 func lugar_texto(celula: Vector2i) -> String:
 	var dentro: String = predio_em(celula)
 	var perto: String = ""
@@ -547,14 +601,14 @@ func lugar_texto(celula: Vector2i) -> String:
 		var d: int = distancia(celula, o["celula"])
 		if m == "porta":
 			d += 1
-		if d < melhor:
+		if d < melhor and linha_de_visao(celula, o["celula"]):
 			melhor = d
 			perto = str(n)
 	if dentro != "":
 		if melhor <= 1:
 			if str(objetos[perto]["modelo"]) == "porta":
 				return "dentro %s, junto da porta" % _de_predio(dentro)
-			return "dentro %s, junto de %s" % [_de_predio(dentro), perto]
+			return "dentro %s, junto de %s" % [_de_predio(dentro), nome_publico_objeto(perto)]
 		return "dentro %s" % _de_predio(dentro)
 	for nome in predios.keys():
 		var p: Dictionary = predios[nome]
@@ -577,7 +631,7 @@ func lugar_texto(celula: Vector2i) -> String:
 		_:
 			zona_txt = "no campo aberto"
 	if melhor <= 2:
-		return "%s, perto de %s" % [zona_txt, perto]
+		return "%s, perto de %s" % [zona_txt, nome_publico_objeto(perto)]
 	return zona_txt
 
 
@@ -793,8 +847,8 @@ func nome_da_cena() -> String:
 
 
 func liberar_exploracao(texto: String) -> String:
-	var pedido: String = _normalizar(texto.strip_edges()).rstrip("?.!")
-	if pedido not in ["/explorar", "explorar", "quero explorar"] and not (pedido.begins_with("exploro ") or pedido.begins_with("quero explorar ") or pedido.begins_with("mestre quero explorar ") or pedido.begins_with("mestre, quero explorar ")):
+	var pedido: String = _normalizar(texto.strip_edges()).rstrip("?.!").strip_edges().trim_prefix("eu ")
+	if pedido not in ["/explorar", "explorar", "quero explorar", "posso explorar"] and not (pedido.begins_with("posso explorar ") or pedido.begins_with("exploro ") or pedido.begins_with("quero explorar ") or pedido.begins_with("mestre quero explorar ") or pedido.begins_with("mestre, quero explorar ")):
 		return ""
 	if modo == "combate":
 		return "A exploração livre volta quando o combate terminar."
@@ -803,7 +857,7 @@ func liberar_exploracao(texto: String) -> String:
 	exploracao_liberada = true
 	_atualizar_interface()
 	salvar_mundo()
-	return "Você pode explorar %s por clique. Para mudar de cena, diga ao Mestre para onde quer ir." % nome_da_cena()
+	return "Você pode explorar %s por clique. Atravesse portas abertas pelo tabuleiro ou diga ao Mestre aonde quer ir." % nome_da_cena()
 
 
 func _em_movimento(celula: Vector2i) -> bool:
@@ -829,18 +883,19 @@ func _andar_na_cena(caminho: Array, trocar_cena: bool) -> bool:
 	var ameaca: bool = false
 	for celula in caminho:
 		trecho.append(celula)
-		if _inimigo_proximo(RAIO_DE_AMEACA, celula):
+		if _inimigo_proximo(celula):
 			ameaca = true
 			break
 	if trecho.is_empty() or not mover_peca(celula_jogador, trecho.back(), trecho):
 		return false
+	aviso = ""
 	if trocar_cena and not _na_area_da_cena(celula_jogador):
 		centro_cena = celula_jogador
 		exploracao_liberada = true
 		registrar_evento("cena", "Kuzin chegou a %s." % nome_da_cena())
 	if ameaca:
 		minutos_do_mundo += trecho.size()
-		iniciar_combate("Kuzin entrou no alcance de um inimigo hostil")
+		iniciar_combate("Um inimigo avistou Kuzin e deu o alarme")
 		salvar_mundo()
 	else:
 		avancar_relogio(trecho.size())
@@ -855,10 +910,28 @@ func definir_agenda(celula: Vector2i, etapas: Array) -> void:
 	ficha["atividade"] = etapas[0][2]
 
 
+func esperar_na_cena(texto: String) -> String:
+	var partes: PackedStringArray = _normalizar(texto.strip_edges()).rstrip(".!?").split(" ", false)
+	if partes.is_empty() or partes[0] != "espero":
+		return ""
+	if partes.size() != 3 or not partes[1].is_valid_int() or partes[2] not in ["minuto", "minutos"]:
+		return "Escreva, por exemplo, 'espero 5 minutos'."
+	var minutos: int = int(partes[1])
+	if minutos < 1 or minutos > 60:
+		return "Escolha de 1 a 60 minutos para esperar."
+	avancar_relogio(minutos)
+	return "Você espera %d min. O relógio avança e os moradores seguem suas rotinas." % minutos
+
+
 func avancar_relogio(minutos: int) -> void:
 	if modo == "combate" or minutos <= 0 or fim_de_jogo:
 		return
+	var minutos_antes: int = minutos_do_mundo
 	minutos_do_mundo += minutos
+	if ensaio_taverna != null:
+		var hora_antes: int = minutos_antes % 1440
+		if hora_antes < EnsaioTaverna.TROCA_DE_POSTO and hora_antes + minutos >= EnsaioTaverna.TROCA_DE_POSTO:
+			log_de_combate.emit("O sino da praça toca. É a troca de turno da guarda.")
 	var hora: int = minutos_do_mundo % 1440
 	var mestre: Node = _mestre()
 	for nome in agendas:
@@ -881,6 +954,8 @@ func avancar_relogio(minutos: int) -> void:
 			mover_peca(origem, destino, _reconstruir_caminho(previos, origem, destino))
 		agenda["passo"] = passo
 		ficha_em(destino)["atividade"] = etapas[passo][2]
+	if _inimigo_proximo():
+		iniciar_combate("Um inimigo avistou Kuzin e deu o alarme")
 	_atualizar_interface()
 	salvar_mundo()
 
@@ -1019,7 +1094,7 @@ func lista_para_painel() -> Array:
 		elif str(f["lado"]) == "inimigo":
 			categoria = "inimigos"
 		var vida: int = roundi(100.0 * float(f["pv"]) / float(maxi(int(f["pv_max"]), 1)))
-		lista.append({"nome": str(f["nome"]), "classe": str(f.get("classe", "")), "progresso": vida, "categoria": categoria})
+		lista.append({"nome": str(f["nome"]), "classe": titulo_publico(f), "progresso": vida, "categoria": categoria})
 	return lista
 
 
@@ -1558,6 +1633,26 @@ func jogador_atacar(alvo_cel: Vector2i) -> bool:
 # TURNOS
 # ===============================================================
 
+func _passagem_por_clique(destino: Vector2i) -> Array:
+	if not celula_valida(destino):
+		return []
+	var origem: String = predio_em(celula_jogador)
+	var entrada: String = predio_em(destino)
+	if origem != "" and entrada == "":
+		for porta in predios[origem]["portas"]:
+			if celula_jogador == porta["celula"] and distancia(porta["fora"], destino) <= ALCANCE_CLIQUE_PORTA:
+				return [porta["fora"]]
+	if origem == "" and entrada != "":
+		for porta in predios[entrada]["portas"]:
+			if celula_jogador != porta["fora"]:
+				continue
+			if destino == porta["celula"]:
+				return [destino]
+			if distancia(porta["dentro"], destino) <= ALCANCE_CLIQUE_PORTA:
+				return [porta["celula"], porta["dentro"]]
+	return []
+
+
 func mover_jogador(destino: Vector2i) -> bool:
 	if fim_de_jogo:
 		return false
@@ -1578,7 +1673,21 @@ func mover_jogador(destino: Vector2i) -> bool:
 			_mostrar_aviso("Escreva 'quero explorar' no chat para liberar o movimento nesta cena.")
 			return false
 		if not _na_area_da_cena(destino):
-			_mostrar_aviso("Limite da cena. Diga ao Mestre para onde quer ir.")
+			var passagem: Array = _passagem_por_clique(destino)
+			if not passagem.is_empty():
+				var anterior: Vector2i = celula_jogador
+				for celula in passagem:
+					if eh_obstaculo(anterior) or _custo_do_passo(anterior, celula) < 0 or celula_ocupada(celula):
+						_mostrar_aviso("A passagem está bloqueada. Confira se a porta está aberta e o caminho está livre.")
+						return false
+					anterior = celula
+				return _andar_na_cena(passagem, true)
+			if predio_em(celula_jogador) != "" and predio_em(destino) == "":
+				_mostrar_aviso("Para sair, vá até a porta aberta e clique no chão logo do outro lado, ou escreva 'saio' no chat.")
+			elif predio_em(destino) != "":
+				_mostrar_aviso("Para entrar, aproxime-se pelo lado de fora e clique na porta, ou diga o nome do lugar no chat.")
+			else:
+				_mostrar_aviso("Limite da cena. Diga ao Mestre para onde quer ir.")
 			return false
 	var limite_mov: int = LIMITE_CLIQUE if livre else movimento_restante
 	var previos: Dictionary = {}
@@ -1627,16 +1736,20 @@ func _mestre() -> Node:
 # ---------------------------------------------------------------
 # COMBATE POR INICIATIVA (igual à mesa de RPG)
 # ---------------------------------------------------------------
-const RAIO_DE_AMEACA: int = 8     # o Mestre só pode iniciar combate se algum inimigo estiver a esta distância do Kuzin
+const RAIO_DE_AMEACA: int = 8
 
 
-func _inimigo_proximo(raio: int, posicao: Vector2i = CELULA_INVALIDA) -> bool:
+func _hostil_avista(hostil: Vector2i, jogador: Vector2i) -> bool:
+	return celula_valida(jogador) and distancia(hostil, jogador) <= RAIO_DE_AMEACA and linha_de_visao(hostil, jogador)
+
+
+func _inimigo_proximo(posicao: Vector2i = CELULA_INVALIDA) -> bool:
 	if celula_jogador == CELULA_INVALIDA:
 		return false
 	var minha: Dictionary = ficha_em(celula_jogador)
 	var origem: Vector2i = celula_jogador if posicao == CELULA_INVALIDA else posicao
 	for c in pecas.keys():
-		if sao_hostis(minha, ficha_em(c)) and distancia(origem, c) <= raio:
+		if sao_hostis(minha, ficha_em(c)) and _hostil_avista(c, origem):
 			return true
 	return false
 
@@ -1656,8 +1769,8 @@ func iniciar_combate(motivo: String = "", origem: String = "jogo") -> bool:
 		if motivo.strip_edges() == "":
 			_falhar("Para iniciar combate você precisa informar o MOTIVO no campo 'texto' (o que desencadeou a luta).")
 			return false
-		if not _inimigo_proximo(RAIO_DE_AMEACA):
-			_falhar("Nenhum inimigo está a %d células ou menos de Kuzin: ninguém o ameaça ainda. Aproxime os inimigos (mover) ou narre o perigo sem iniciar combate." % RAIO_DE_AMEACA)
+		if not _inimigo_proximo():
+			_falhar("Nenhum inimigo a até %d células tem linha de visão de Kuzin." % RAIO_DE_AMEACA)
 			return false
 
 	# Rola iniciativa: d20 + modificador
@@ -2233,7 +2346,7 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			var ameaca: bool = false
 			if sao_hostis(ficha_em(celula_jogador), ficha):
 				for i in range(caminho.size()):
-					if distancia(celula_jogador, caminho[i]) <= RAIO_DE_AMEACA:
+					if _hostil_avista(caminho[i], celula_jogador):
 						ameaca = true
 						destino = caminho[i]
 						caminho = caminho.slice(0, i + 1)
@@ -2241,7 +2354,7 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			resultado = mover_peca(origem, destino, caminho)
 			if resultado:
 				if ameaca:
-					iniciar_combate("Um inimigo hostil se aproximou de Kuzin")
+					iniciar_combate("Um inimigo se aproximou, avistou Kuzin e deu o alarme")
 				salvar_mundo()
 				return "OK: %s foi para (%d,%d).%s" % [ficha["nome"], destino.x, destino.y, " O combate começou." if ameaca else ""]
 		"colocar":
@@ -2258,8 +2371,8 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			if resultado:
 				_aplicar_conhecimento_do_mestre(Vector2i(x, z), comando)
 				registrar_evento("cena", "%s apareceu na cena (%s)." % [alvo, lado if lado != "" else "criatura"])
-				if modo != "combate" and sao_hostis(ficha_em(celula_jogador), ficha_em(Vector2i(x, z))) and distancia(celula_jogador, Vector2i(x, z)) <= RAIO_DE_AMEACA:
-					if iniciar_combate("Um inimigo hostil apareceu perto de Kuzin"):
+				if modo != "combate" and sao_hostis(ficha_em(celula_jogador), ficha_em(Vector2i(x, z))) and _hostil_avista(Vector2i(x, z), celula_jogador):
+					if iniciar_combate("Um inimigo apareceu, avistou Kuzin e deu o alarme"):
 						return "OK: %s apareceu em (%d,%d). O combate começou." % [alvo, x, z]
 				return "OK: %s apareceu em (%d,%d)." % [alvo, x, z]
 		"remover":
@@ -2529,12 +2642,16 @@ func _notification(what: int) -> void:
 
 
 func apagar_mundo() -> void:
+	if ensaio_taverna != null:
+		return
 	if FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(Mundo.ARQUIVO_MUNDO))
 
 
 # Lê o arquivo de jogo salvo ({} se não existe ou é de uma versão antiga)
 func _ler_salvo() -> Dictionary:
+	if ensaio_taverna != null:
+		return {}
 	if not FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
 		return {}
 	var dados: Variant = str_to_var(FileAccess.get_file_as_string(Mundo.ARQUIVO_MUNDO))
@@ -2546,6 +2663,8 @@ func _ler_salvo() -> Dictionary:
 
 
 func salvar_mundo() -> void:
+	if ensaio_taverna != null:
+		return
 	if not _registro_ativo or _carregando or celula_jogador == CELULA_INVALIDA or fim_de_jogo:
 		return
 	var pers: Array = []
@@ -2578,6 +2697,8 @@ func salvar_mundo() -> void:
 
 # Reconstrói o estado salvo POR CIMA do cenário inicial já montado
 func carregar_mundo() -> void:
+	if ensaio_taverna != null:
+		return
 	if not FileAccess.file_exists(Mundo.ARQUIVO_MUNDO):
 		return
 	var dados: Dictionary = _ler_salvo()
@@ -2748,7 +2869,7 @@ const RECURSOS_VERIFICAVEIS: Array = [["alçapão", "alcapao"], ["escada", "esca
 # "vou até a bancada", "me aproximo do Barnaby", "entro na casa"...
 # O jogo acha o alvo, calcula o caminho, move o Kuzin e devolve um FATO verdadeiro para o Mestre narrar.
 # ---------------------------------------------------------------
-const GATILHOS_DE_MOVIMENTO: Array[String] = ["aproxim", "chego", "dirij", "caminho", "corro", "entro", "saio", "me posiciono",
+const GATILHOS_DE_MOVIMENTO: Array[String] = ["aproxim", "chego", "dirij", "caminho", "corro", "entro", "entrar ", "saio", "sair ", "me posiciono",
 	"vou ate", "vou para", "vou pra", "vou a ", "vou ao", "vou na", "vou no", "vou em", "indo ate", "ir ate", "ir para", "ir pra",
 	"quero ir", "vamos ate", "me movo", "me mexo", "ando ate", "ando ao", "ando para", "chegar perto", "ficar perto", "me afasto de"]
 const PALAVRAS_IGNORADAS: Array[String] = ["de", "do", "da", "dos", "das", "dourado", "javali"]
@@ -2868,11 +2989,15 @@ func interpretar_movimento(texto: String) -> String:
 	if destino == CELULA_INVALIDA:
 		return "FATO DO JOGO: Kuzin não conseguiu chegar a %s. O caminho está bloqueado ou o destino está longe demais. Ele continua onde estava." % nome
 	if destino == celula_jogador:
+		if tipo == "personagem":
+			return "FATO DO JOGO: Você já está perto de %s." % nome
 		return "FATO DO JOGO: Kuzin já está no destino (%s)." % nome
 	if not _andar_na_cena(_reconstruir_caminho(previos, celula_jogador, destino), true):
 		return "FATO DO JOGO: Kuzin não conseguiu andar. Ele continua onde estava."
 	if modo == "combate":
 		return "FATO DO JOGO: Kuzin chegou a uma posição ameaçada (%s). O movimento foi interrompido e o combate começou." % lugar_texto(celula_jogador)
+	if tipo == "personagem":
+		return "FATO DO JOGO: Você se aproxima de %s, %s." % [nome, lugar_texto(celula_jogador)]
 	return "FATO DO JOGO: Kuzin chegou %s. Cena atual: %s." % [lugar_texto(celula_jogador), nome_da_cena()]
 
 
@@ -3113,7 +3238,7 @@ func proximidade_texto() -> String:
 	var t: String = "PROXIMIDADE DE KUZIN (já calculada pelo jogo; NÃO invente distâncias nem posições):\n"
 	t += "- Kuzin está %s.\n" % lugar_texto(celula_jogador)
 	for c in pecas.keys():
-		if c == celula_jogador:
+		if c == celula_jogador or not alvo_visivel(c):
 			continue
 		var f: Dictionary = ficha_em(c)
 		t += "- %s: %s.\n" % [f["nome"], _palavra_de_distancia(distancia(celula_jogador, c))]
@@ -3160,27 +3285,30 @@ func resumo_da_cena() -> String:
 		return "Seu personagem não está no tabuleiro."
 	var f: Dictionary = ficha_em(celula_jogador)
 	var t: String = "%s está %s." % [f["nome"], lugar_texto(celula_jogador)]
-	var ao_lado: Array = []
-	var perto: Array = []
-	var longe: Array = []
-	for c in pecas.keys():
-		if c == celula_jogador:
+	var pessoas: Array = []
+	for c in pecas:
+		if c != celula_jogador and alvo_visivel(c):
+			pessoas.append(str(ficha_em(c)["nome"]))
+	if not pessoas.is_empty():
+		t += " Você vê " + ", ".join(pessoas) + "."
+	var grupos: Dictionary = {}
+	for nome in objetos:
+		var obj: Dictionary = objetos[nome]
+		var celula: Vector2i = obj["celula"]
+		var modelo: String = str(obj["modelo"])
+		if modelo in ["parede", "muro", "porta", "arvore"] or str(obj["dono"]) != "":
 			continue
-		var g: Dictionary = ficha_em(c)
-		var d: int = distancia(celula_jogador, c)
-		var item: String = "%s (%s)" % [g["nome"], {"aliado": "aliado", "inimigo": "inimigo", "neutro": "neutro"}.get(str(g["lado"]), "")]
-		if d <= 1:
-			ao_lado.append(item)
-		elif d <= 4:
-			perto.append(item)
-		else:
-			longe.append(item)
-	if not ao_lado.is_empty():
-		t += " Ao seu lado: " + ", ".join(ao_lado) + "."
-	if not perto.is_empty():
-		t += " Por perto: " + ", ".join(perto) + "."
-	if not longe.is_empty():
-		t += " Mais longe: " + ", ".join(longe) + "."
+		if distancia(celula_jogador, celula) > 5 or not alvo_visivel(celula):
+			continue
+		var grupo: String = nome_publico_objeto(nome)
+		if not grupos.has(grupo):
+			grupos[grupo] = {"nome": nome, "total": 0}
+		grupos[grupo]["total"] += 1
+	var itens: Array = []
+	for grupo in grupos.values():
+		itens.append(nome_publico_objeto(grupo["nome"], grupo["total"]))
+	if not itens.is_empty():
+		t += " Por perto há " + ", ".join(itens.slice(0, 6)) + "."
 	if not (f["inventario"] as Array).is_empty():
 		t += " Você carrega: " + ", ".join(f["inventario"]) + "."
 	return t
@@ -3446,7 +3574,7 @@ func _atualizar_interface() -> void:
 	else:
 		var hora: int = minutos_do_mundo % 1440
 		texto = "CENA: %s  |  Dia %d, %02d:%02d\n" % [nome_da_cena(), floori(minutos_do_mundo / 1440.0) + 1, floori(hora / 60.0), hora % 60]
-		texto += "Clique para andar na cena. Use o chat para agir ou sair.\n" if exploracao_liberada else "Escreva 'quero explorar' para andar por clique.\n"
+		texto += "Clique para andar e atravessar portas. Use o chat para agir ou ir a outro lugar.\n" if exploracao_liberada else "Escreva 'quero explorar' para andar por clique.\n"
 	if celula_jogador == CELULA_INVALIDA:
 		texto += "Jogador: fora do tabuleiro"
 	else:
@@ -3457,6 +3585,8 @@ func _atualizar_interface() -> void:
 		var inv: Array = f["inventario"]
 		if not inv.is_empty():
 			texto += "\nCarregando: " + ", ".join(inv)
+	if ensaio_taverna != null:
+		texto += "\n" + ensaio_taverna.objetivo_texto()
 	if aviso != "":
 		texto += "\n" + aviso
 	rotulo_status.text = texto
@@ -3737,7 +3867,7 @@ func acao_com_pessoa(nome: String, verbo: String) -> void:
 				_dizer("Você não consegue ver %s daqui." % nome)
 				return
 			avancar_relogio(1)
-			var t: String = "%s (%s)." % [nome, str(f.get("classe", "")).strip_edges()]
+			var t: String = "%s (%s)." % [nome, titulo_publico(f)]
 			if str(f.get("atividade", "")) != "":
 				t += " Está " + str(f["atividade"]) + "."
 			_dizer("Você observa " + t)
@@ -3779,7 +3909,7 @@ func executar_verbo_objeto(nome_obj: String, verbo: String) -> Dictionary:
 	if verbo == "examinar":
 		if not no_inventario and not alvo_visivel(obj["celula"]):
 			return {"ok": false, "texto": "Você não consegue ver %s daqui." % nome_obj, "rolou": false}
-		var t0: String = "Você examina %s (%s, %s)." % [nome_obj, str(obj["modelo"]), str(obj["estado"])]
+		var t0: String = "Você examina %s (%s)." % [nome_publico_objeto(nome_obj), str(obj["estado"])]
 		if bool(obj.get("trancado", false)):
 			t0 += " Está trancada."
 		return {"ok": true, "texto": t0, "rolou": false}

@@ -121,6 +121,7 @@ static func montar(tab: Node, semente: int) -> String:
 	tab.colocar_personagem(cel_kuzin, "Kuzin", "kuzin", "jogador")
 
 	var gancho: String = str(enredo["gancho"])
+	tab.boato_inicial = gancho
 	var ameaca_nome: String = str(enredo["ameaca_nome"])
 	var dono_cel: Vector2i = _celula_livre_dentro(tab, pr, rng)
 	var segredos_dono: Array = ["Recebi um recado exigindo pagamento dos %s e ainda não contei a ninguém." % ameaca_nome,
@@ -155,24 +156,21 @@ static func montar(tab: Node, semente: int) -> String:
 	var ancora: Vector2i = _celula_livre_perto(tab, plano["acampamento"], 2, rng)
 	if ancora == tab.CELULA_INVALIDA:
 		ancora = _celula_longe(tab, cel_kuzin, 12, 30, rng)
-	var inimigos_txt: Array = []
 	var i: int = 0
 	for modelo in enredo["ameaca"]:
 		var c: Vector2i = ancora if i == 0 else _celula_livre_perto(tab, ancora, 3, rng)
 		var nm: String = str(nomes_inim[i % nomes_inim.size()])
-		if c != tab.CELULA_INVALIDA and tab.colocar_personagem(c, nm, str(modelo), "inimigo"):
-			inimigos_txt.append("%s (%s)" % [nm, tab.MODELOS_CRIATURA[str(modelo)]["classe"]])
+		if c != tab.CELULA_INVALIDA:
+			tab.colocar_personagem(c, nm, str(modelo), "inimigo")
 		i += 1
 
 	# --- premissa para o Mestre ---
 	var onde: String = "está dentro de %s" % principal if str(enredo["kuzin"]) == "dentro" else "está do lado de fora de %s" % principal
-	var t: String = "Kuzin, meio-elfo ladino de nível 3, %s, na vila de %s, %s. " % [onde, local_nome, momento]
+	var t: String = "Kuzin, um ladino meio-elfo, %s, na vila de %s, %s. " % [onde, local_nome, momento]
 	t += "Por perto estão %s (%s), o guarda %s e %s, viajante. " % [dono_nome, str(enredo["cargo_dono"]), guarda_nome, viajante_nome]
 	t += "A vila fica numa clareira cercada de floresta, com uma praça no meio. "
 	if casa_final != "":
 		t += "Na vila também ficam: %s. " % casa_final
-	if not inimigos_txt.is_empty():
-		t += "Longe dali, num acampamento na estrada ao %s, estão os que ameaçam a vila: %s. " % [str(plano["direcao_acampamento"]), ", ".join(inimigos_txt)]
 	t += gancho
 	return t
 

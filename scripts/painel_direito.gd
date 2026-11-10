@@ -1,26 +1,15 @@
 extends Control
 # Chat com o Mestre IA (usa o Autoload MestreIA)
 
-@onready var chat_historico: RichTextLabel = $VBoxContainer/RichTextLabel
-@onready var input_texto: TextEdit = $VBoxContainer/HBoxContainer/TextEdit
-@onready var botao_enviar: Button = $VBoxContainer/HBoxContainer/Button
+@onready var chat_historico: RichTextLabel = %HistoricoChat
+@onready var input_texto: TextEdit = %EntradaChat
+@onready var botao_enviar: Button = %EnviarChat
 
 var _mestre: Node
 var _iniciou: bool = false
-var _cena_pendente: bool = false
 
 
 func _ready() -> void:
-	chat_historico.bbcode_enabled = true
-	# Layout: o chat ocupa o espaço todo; a caixa de digitação fica baixa e o botão Enviar visível
-	chat_historico.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	chat_historico.scroll_following = true
-	input_texto.custom_minimum_size = Vector2(0.0, 90.0)
-	input_texto.size_flags_vertical = Control.SIZE_SHRINK_END
-	input_texto.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	input_texto.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	botao_enviar.size_flags_vertical = Control.SIZE_SHRINK_END
-	botao_enviar.focus_mode = Control.FOCUS_NONE
 	botao_enviar.pressed.connect(_on_enviar)
 	input_texto.gui_input.connect(_on_texto_gui_input)
 	botao_enviar.disabled = true
@@ -37,18 +26,18 @@ func _ready() -> void:
 	_mestre.conversa_mudou.connect(_ao_mudar_conversa)
 	_mestre.ocupado_mudou.connect(_ao_mudar_ocupado)
 	_mestre.mestre_pronto.connect(_ao_ficar_pronto)
-	if _mestre.esta_pronto():
-		_ao_ficar_pronto()
+	_ao_ficar_pronto()
 
 	# O tabuleiro nasce depois deste painel: espera um quadro para achá-lo
 	await get_tree().process_frame
 	var tab: Node = get_tree().get_first_node_in_group("tabuleiro")
 	if tab != null:
 		tab.log_de_combate.connect(func(t: String) -> void: _msg("Jogo", t))
+		tab.pedido_de_conversa.connect(func(nome: String) -> void: _mestre.comecar_conversa(nome))
 
 
 func _ao_ficar_pronto() -> void:
-	botao_enviar.disabled = false
+	botao_enviar.disabled = _mestre.esta_ocupado()
 	if not _iniciou:
 		_iniciou = true
 		_mestre.iniciar_aventura()
@@ -64,7 +53,7 @@ func _ao_mudar_conversa(nome: String) -> void:
 
 
 func _ao_mudar_ocupado(ocupado: bool) -> void:
-	botao_enviar.disabled = ocupado or not _mestre.esta_pronto()
+	botao_enviar.disabled = ocupado
 
 
 func _mostrar_cena() -> void:
@@ -92,7 +81,7 @@ func _on_texto_gui_input(event: InputEvent) -> void:
 
 func _on_enviar() -> void:
 	var texto: String = input_texto.text.strip_edges()
-	if texto == "" or _mestre == null:
+	if texto == "" or _mestre == null or botao_enviar.disabled:
 		return
 	input_texto.text = ""
 
@@ -132,7 +121,7 @@ func _on_enviar() -> void:
 		_mostrar_cena()
 		return
 	if texto == "/ajuda":
-		_msg("Sistema", "Comandos: /rapido (liga/desliga o Mestre instantâneo de teste), /evento (avança a história no modo rápido), /falar Nome e /sair (conversa com NPC), /onde (resumo da cena), /diario (o que já aconteceu), /npc Nome (ficha), /notas (notas da IA), /nova (nova campanha). Enter envia, Shift+Enter pula linha. Esc ou clicar fora solta o chat.")
+		_msg("Sistema", "Comandos: /explorar (libera o clique na cena), /rapido (liga/desliga o Mestre instantâneo de teste), /evento (avança a história no modo rápido), /falar Nome e /sair (conversa com NPC), /onde (resumo da cena), /diario (o que já aconteceu), /npc Nome (ficha), /notas (notas da IA), /nova (nova campanha). Enter envia, Shift+Enter pula linha. Esc ou clicar fora solta o chat.")
 		return
 	if texto == "/notas":
 		var tab: Node = get_tree().get_first_node_in_group("tabuleiro")
@@ -141,12 +130,24 @@ func _on_enviar() -> void:
 			_msg("Sistema", "Notas da IA: " + ("ligadas" if tab.debug_ativo else "desligadas"))
 		return
 
-	if not _mestre.esta_pronto() or _mestre.esta_ocupado():
-		return
 	_msg("Você", texto)
 	_mestre.jogador_agiu(texto)
 
 
 func _msg(remetente: String, mensagem: String) -> void:
-	var segura: String = mensagem.replace("[", "[lb]")
-	chat_historico.append_text("\n[b]%s:[/b] %s" % [remetente, segura])
+	if chat_historico.get_total_character_count() > 0:
+		chat_historico.add_text("\n\n")
+	var cor: Color = Color("#c0c8d4")
+	match remetente:
+		"Você":
+			cor = Color("#91d3ff")
+		"Mestre":
+			cor = Color("#ffd18a")
+		"Jogo", "Sistema":
+			cor = Color("#abb5c2")
+	chat_historico.push_color(cor)
+	chat_historico.push_bold()
+	chat_historico.add_text(remetente + ": ")
+	chat_historico.pop()
+	chat_historico.pop()
+	chat_historico.add_text(mensagem)

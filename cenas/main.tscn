@@ -80,32 +80,72 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="PainelDireito" type="PanelContainer" parent="CanvasLayer/UI/LayoutPrincipal" unique_id=2084585060]
-custom_minimum_size = Vector2(350, 0)
+[node name="PainelDireito" type="PanelContainer" parent="CanvasLayer/UI/LayoutPrincipal" unique_id=2084585060 groups=["painel_chat"]]
+custom_minimum_size = Vector2(420, 0)
 layout_mode = 2
 script = ExtResource("4_5wwvk")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito" unique_id=1180224953]
+[node name="Margens" type="MarginContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito"]
 layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
 
-[node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer" unique_id=235718037]
+[node name="Coluna" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens" unique_id=1180224953]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Titulo" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 23
+text = "Conversa com o Mestre"
+
+[node name="Divisor" type="VSplitContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna"]
 layout_mode = 2
 size_flags_vertical = 3
-text = "chat 
+theme_override_constants/separation = 14
 
-Mestre: Kuzin mata simões"
-
-[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer" unique_id=2039616270]
+[node name="HistoricoChat" type="RichTextLabel" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna/Divisor" unique_id=235718037]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 96)
 layout_mode = 2
 size_flags_vertical = 3
+size_flags_stretch_ratio = 3.6
+theme_override_constants/line_separation = 5
+scroll_active = true
+scroll_following = true
 
-[node name="TextEdit" type="TextEdit" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer/HBoxContainer" unique_id=1254170851]
-custom_minimum_size = Vector2(0, 40)
+[node name="Compositor" type="VBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna/Divisor"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="EntradaChat" type="TextEdit" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna/Divisor/Compositor" unique_id=1254170851]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 160)
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "Descreva o que Kuzin faz..."
+wrap_mode = 1
+scroll_smooth = true
+
+[node name="Rodape" type="HBoxContainer" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna/Divisor/Compositor" unique_id=2039616270]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Atalhos" type="Label" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna/Divisor/Compositor/Rodape"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.7, 0.74, 0.79, 1)
+theme_override_font_sizes/font_size = 14
+text = "Enter envia  •  Shift+Enter quebra linha"
 
-[node name="Button" type="Button" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/VBoxContainer/HBoxContainer" unique_id=669897487]
+[node name="EnviarChat" type="Button" parent="CanvasLayer/UI/LayoutPrincipal/PainelDireito/Margens/Coluna/Divisor/Compositor/Rodape" unique_id=669897487]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(92, 40)
 layout_mode = 2
+focus_mode = 0
 text = "Enviar"
 
 [node name="PainelFicha" type="Panel" parent="CanvasLayer" unique_id=1272782588]

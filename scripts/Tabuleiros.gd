@@ -22,6 +22,7 @@ const GeradorHistoria = preload("res://scripts/gerador_historia.gd")
 # Sinais: o painel de chat escuta o "log_de_combate" para mostrar o que aconteceu
 signal log_de_combate(texto: String)
 signal personagens_mudaram()      # o painel da esquerda escuta este sinal
+signal pedido_de_conversa(nome: String)   # clicou em "Falar com..." no menu: o painel abre a conversa
 signal jogador_encerrou()          # o jogador terminou o turno dele (dentro do combate)
 
 # ---------------------------------------------------------------
@@ -40,7 +41,7 @@ const ALTURA_NIVEL: float = 0.6          # quanto sobe cada "nível" de altura d
 const NIVEL_MAXIMO: int = 3
 const SUBIDA_MAXIMA: int = 2             # diferença de níveis que dá para escalar de uma vez
 const TAMANHO_MINIMO: int = 2
-const TAMANHO_MAXIMO: int = 50
+const TAMANHO_MAXIMO: int = 150
 const ALTURA_DESTAQUE: float = 0.12
 const ALTURA_MARCADOR: float = 0.18
 
@@ -64,15 +65,18 @@ F1 = ajuda de teclas"""
 const AJUDA_TECLAS: String = """TECLAS
 Combate: K inicia/encerra | Espaço encerra o turno | clique = andar/atacar
 Câmera: roda = zoom | botão do meio arrasta = girar | WASD desloca | Q/E gira | R/F zoom | C recentra
-Teste: B notas da IA | J demo do pão | N monstro | O pedra | H altura | F2 andar livre | F9 reinicia
+Teste: B notas da IA | J demo do pão | N monstro | O pedra | H altura | F9 reinicia
 Chat: /onde | /notas | /nova | Esc ou clicar fora solta o chat"""
 
 const CRIAR_CENARIO_DE_TESTE: bool = true
+# Para jogar num mapa feito por você (veja res://mapas/vila_exemplo.txt), coloque o caminho aqui. Vazio = o jogo gera um mapa novo.
+const MAPA_MANUAL: String = ""
+const MapaTexto = preload("res://scripts/gerador_mapa_texto.gd")
 const CENARIO_ALEATORIO: bool = true                 # true = cada partida nova tem um cenário NOVO; false = cenário fixo de teste (Taverna Javali Dourado)
 const ORIGEM_CENARIO: Vector2i = Vector2i(10, 8)   # onde o cenário de teste começa no mapa grande
 const USAR_MESTRE_IA: bool = true                    # false = NPCs agem sem narração do Mestre
 const MAX_NPCS: int = 12
-const MAX_OBJETOS: int = 600
+const MAX_OBJETOS: int = 3000
 const ALCANCE_OBJETO: int = 8                        # até onde o Mestre pode "jogar" um objeto
 
 # ---------------------------------------------------------------
@@ -155,7 +159,7 @@ const ESTADOS_LIVRES: Array[String] = ["aberto", "quebrado", "destruido"]
 # CONFIGURAÇÕES DA CÂMERA
 # ---------------------------------------------------------------
 const DISTANCIA_MINIMA: float = 3.0
-const DISTANCIA_MAXIMA: float = 300.0
+const DISTANCIA_MAXIMA: float = 600.0
 const ZOOM_RODA: float = 0.9
 const ZOOM_TECLADO: float = 1.0
 const VELOCIDADE_GIRO: float = 90.0
@@ -166,11 +170,14 @@ const INCLINACAO_MAXIMA: float = 85.0
 # ---------------------------------------------------------------
 # ESTADO DO TABULEIRO
 # ---------------------------------------------------------------
-var largura_tabuleiro: int = 40       # mude para 50 se quiser um mapa ainda maior (máximo: TAMANHO_MAXIMO)
-var profundidade_tabuleiro: int = 40
+var largura_tabuleiro: int = 100      # tamanho do mapa (máximo: TAMANHO_MAXIMO)
+var profundidade_tabuleiro: int = 100
 
 var pecas: Dictionary = {}                  # {célula: Node3D}   (cada peça tem meta "ficha")
 var pisos: Array = []
+var piso_multi: MultiMeshInstance3D = null   # o chão inteiro é UM objeto só (rápido mesmo com milhares de células)
+var zonas: Dictionary = {}                   # {Vector2i: "floresta" | "vila" | ...} -> cor do chão e texto para o Mestre
+var _lote: bool = false                      # true enquanto o gerador cria centenas de objetos de uma vez
 var alturas: Dictionary = {}                # {célula: nível 1..3}   (sem entrada = nível 0)
 var plataformas: Dictionary = {}            # {célula: MeshInstance3D} visual das alturas
 var predios: Dictionary = {}                # {nome: {nome, modelo, x0, z0, x1, z1, porta, fora, extras}}
@@ -207,8 +214,13 @@ var _construindo: bool = false              # true enquanto uma construção mon
 var modo: String = "exploracao"
 var ordem_iniciativa: Array = []            # nomes, do mais rápido ao mais lento
 var ator_atual: String = ""
-var movimento_livre: bool = false           # F2: ferramenta de TESTE para andar sem o Mestre
+const RAIO_CENA: int = 15
+var centro_cena: Vector2i = CELULA_INVALIDA
+var exploracao_liberada: bool = false
+var minutos_do_mundo: int = 8 * 60
+var agendas: Dictionary = {}
 var legenda_visivel: bool = false
+const LIMITE_CLIQUE: int = 60              # até onde dá para ir com UM clique fora de combate
 const LIMITE_EXPLORACAO: int = 20           # até quantas "células de custo" o Mestre move alguém fora de combate
 var eventos_turno: Array = []               # frases sobre o que aconteceu (vai para o Mestre narrar)
 var indice_modelo_teste: int = 0
@@ -268,11 +280,15 @@ func _ready() -> void:
 			if semente_cenario == 0:
 				randomize()
 				semente_cenario = randi_range(1, 2000000000)
-			premissa_atual = GeradorHistoria.montar(self, semente_cenario)
+			if MAPA_MANUAL != "":
+				premissa_atual = MapaTexto.carregar(self, MAPA_MANUAL, semente_cenario)
+			else:
+				premissa_atual = GeradorHistoria.montar(self, semente_cenario)
 			print("Cenário novo gerado (semente ", semente_cenario, "): ", premissa_atual)
 		else:
 			_montar_cenario_de_teste()
 
+	centro_cena = celula_jogador
 	carregar_mundo()            # se existe um jogo salvo, continua de onde parou
 	_registro_ativo = true
 
@@ -526,7 +542,7 @@ func lugar_texto(celula: Vector2i) -> String:
 	for n in objetos.keys():
 		var o: Dictionary = objetos[n]
 		var m: String = str(o["modelo"])
-		if m == "parede" or m == "muro" or str(o["dono"]) != "":
+		if m == "parede" or m == "muro" or m == "arvore" or str(o["dono"]) != "":
 			continue
 		var d: int = distancia(celula, o["celula"])
 		if m == "porta":
@@ -546,9 +562,23 @@ func lugar_texto(celula: Vector2i) -> String:
 		var dz: int = maxi(maxi(int(p["z0"]) - celula.y, celula.y - int(p["z1"])), 0)
 		if maxi(dx, dz) <= 2:
 			return "do lado de fora %s" % _de_predio(nome)
+	var zona_txt: String = ""
+	match zona_em(celula):
+		"floresta":
+			zona_txt = "na floresta"
+		"estrada":
+			zona_txt = "na estrada"
+		"praça":
+			zona_txt = "na praça da vila"
+		"vila":
+			zona_txt = "na vila"
+		"acampamento":
+			zona_txt = "no acampamento"
+		_:
+			zona_txt = "no campo aberto"
 	if melhor <= 2:
-		return "ao ar livre, perto de %s" % perto
-	return "ao ar livre"
+		return "%s, perto de %s" % [zona_txt, perto]
+	return zona_txt
 
 
 # ===============================================================
@@ -683,16 +713,198 @@ func _process(delta: float) -> void:
 # CAMADA 3: O TABULEIRO
 # ===============================================================
 
+# Cores do chão por zona (mude à vontade!)
+const COR_ZONAS: Dictionary = {
+	"campo": Color(0.42, 0.62, 0.30),
+	"floresta": Color(0.15, 0.36, 0.17),
+	"vila": Color(0.66, 0.55, 0.38),
+	"praça": Color(0.78, 0.74, 0.62),
+	"estrada": Color(0.55, 0.42, 0.26),
+	"acampamento": Color(0.50, 0.22, 0.18),
+}
+const COR_ZONA_PADRAO: Color = Color(0.42, 0.62, 0.30)
+
+
 func gerar_tabuleiro() -> void:
 	for piso in pisos:
 		piso.queue_free()
 	pisos.clear()
+	if piso_multi != null:
+		piso_multi.queue_free()
+		piso_multi = null
+	var malha := BoxMesh.new()
+	malha.size = Vector3(1.9, 0.1, 1.9)
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 1.0
+	malha.material = material
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = malha
+	mm.instance_count = largura_tabuleiro * profundidade_tabuleiro
+	piso_multi = MultiMeshInstance3D.new()
+	piso_multi.multimesh = mm
+	add_child(piso_multi)
+	pintar_chao()
+
+
+# Repinta o chão inteiro conforme o mapa de zonas
+func pintar_chao() -> void:
+	if piso_multi == null:
+		return
+	var mm: MultiMesh = piso_multi.multimesh
+	var i: int = 0
 	for x in range(largura_tabuleiro):
 		for z in range(profundidade_tabuleiro):
-			var piso = CENA_PISO.instantiate()
-			add_child(piso)
-			piso.position = _celula_para_posicao(Vector2i(x, z), 0.0)
-			pisos.append(piso)
+			mm.set_instance_transform(i, Transform3D(Basis(), _celula_para_posicao(Vector2i(x, z), 0.0)))
+			var zona: String = str(zonas.get(Vector2i(x, z), "campo"))
+			var cor: Color = COR_ZONAS.get(zona, COR_ZONA_PADRAO)
+			# pequena variação por célula para o chão não ficar "chapado"
+			var v: float = float((x * 73856093) ^ (z * 19349663)) / 4294967296.0
+			v = (v - floorf(v)) * 0.06 - 0.03
+			mm.set_instance_color(i, Color(clampf(cor.r + v, 0.0, 1.0), clampf(cor.g + v, 0.0, 1.0), clampf(cor.b + v, 0.0, 1.0)))
+			i += 1
+
+
+func zona_em(celula: Vector2i) -> String:
+	return str(zonas.get(celula, "campo"))
+
+
+func _zona_da_cena(celula: Vector2i) -> String:
+	var zona: String = zona_em(celula)
+	return "vila" if zona == "praça" else zona
+
+
+func _na_area_da_cena(celula: Vector2i) -> bool:
+	var predio: String = predio_em(centro_cena)
+	var predio_destino: String = predio_em(celula)
+	if predio != "" or predio_destino != "":
+		return predio == predio_destino
+	var zona: String = _zona_da_cena(centro_cena)
+	if _zona_da_cena(celula) != zona:
+		return false
+	return zona in ["vila", "acampamento"] or distancia(centro_cena, celula) <= RAIO_CENA
+
+
+func nome_da_cena() -> String:
+	var predio: String = predio_em(centro_cena)
+	return predio if predio != "" else _zona_da_cena(centro_cena).capitalize()
+
+
+func liberar_exploracao(texto: String) -> String:
+	var pedido: String = _normalizar(texto.strip_edges()).rstrip("?.!")
+	if pedido not in ["/explorar", "explorar", "quero explorar"] and not (pedido.begins_with("exploro ") or pedido.begins_with("quero explorar ") or pedido.begins_with("mestre quero explorar ") or pedido.begins_with("mestre, quero explorar ")):
+		return ""
+	if modo == "combate":
+		return "A exploração livre volta quando o combate terminar."
+	if not celula_valida(celula_jogador):
+		return "Kuzin está fora do tabuleiro."
+	exploracao_liberada = true
+	_atualizar_interface()
+	salvar_mundo()
+	return "Você pode explorar %s por clique. Para mudar de cena, diga ao Mestre para onde quer ir." % nome_da_cena()
+
+
+func _em_movimento(celula: Vector2i) -> bool:
+	if not pecas.has(celula) or not pecas[celula].has_meta("movimento"):
+		return false
+	var animacao: Tween = pecas[celula].get_meta("movimento")
+	return animacao != null and animacao.is_running()
+
+
+func _pode_andar_na_cena() -> bool:
+	var mestre: Node = _mestre()
+	if mestre != null and mestre.conversa_atual() != "":
+		_mostrar_aviso("Encerre a conversa com /sair antes de andar.")
+		return false
+	if _em_movimento(celula_jogador) or (mestre != null and mestre.esta_ocupado()):
+		_mostrar_aviso("Aguarde a ação atual terminar.")
+		return false
+	return true
+
+
+func _andar_na_cena(caminho: Array, trocar_cena: bool) -> bool:
+	var trecho: Array = []
+	var ameaca: bool = false
+	for celula in caminho:
+		trecho.append(celula)
+		if _inimigo_proximo(RAIO_DE_AMEACA, celula):
+			ameaca = true
+			break
+	if trecho.is_empty() or not mover_peca(celula_jogador, trecho.back(), trecho):
+		return false
+	if trocar_cena and not _na_area_da_cena(celula_jogador):
+		centro_cena = celula_jogador
+		exploracao_liberada = true
+		registrar_evento("cena", "Kuzin chegou a %s." % nome_da_cena())
+	if ameaca:
+		minutos_do_mundo += trecho.size()
+		iniciar_combate("Kuzin entrou no alcance de um inimigo hostil")
+		salvar_mundo()
+	else:
+		avancar_relogio(trecho.size())
+	return true
+
+
+func definir_agenda(celula: Vector2i, etapas: Array) -> void:
+	var ficha: Dictionary = ficha_em(celula)
+	if ficha.is_empty():
+		return
+	agendas[ficha["nome"]] = {"etapas": etapas, "passo": 0}
+	ficha["atividade"] = etapas[0][2]
+
+
+func avancar_relogio(minutos: int) -> void:
+	if modo == "combate" or minutos <= 0 or fim_de_jogo:
+		return
+	minutos_do_mundo += minutos
+	var hora: int = minutos_do_mundo % 1440
+	var mestre: Node = _mestre()
+	for nome in agendas:
+		if mestre != null and mestre.conversa_atual() == nome:
+			continue
+		var origem: Vector2i = _achar_exato(nome)
+		if origem == CELULA_INVALIDA or _em_movimento(origem):
+			continue
+		var agenda: Dictionary = agendas[nome]
+		var etapas: Array = agenda["etapas"]
+		var passo: int = 0
+		for i in range(1, etapas.size()):
+			if hora >= int(etapas[i][0]):
+				passo = i
+		var destino: Vector2i = etapas[passo][1]
+		if origem != destino:
+			var previos: Dictionary = {}
+			if not _dijkstra(origem, LIMITE_CLIQUE, true, previos).has(destino):
+				continue
+			mover_peca(origem, destino, _reconstruir_caminho(previos, origem, destino))
+		agenda["passo"] = passo
+		ficha_em(destino)["atividade"] = etapas[passo][2]
+	_atualizar_interface()
+	salvar_mundo()
+
+
+func definir_zona(celula: Vector2i, zona: String) -> void:
+	if celula_valida(celula):
+		zonas[celula] = zona
+
+
+# Resumo das zonas para o Mestre: onde fica cada uma (centro e tamanho)
+func resumo_das_zonas() -> String:
+	var soma: Dictionary = {}
+	var cont: Dictionary = {}
+	for c in zonas.keys():
+		var z: String = str(zonas[c])
+		if z == "campo":
+			continue
+		soma[z] = soma.get(z, Vector2i.ZERO) + c
+		cont[z] = int(cont.get(z, 0)) + 1
+	var t: String = ""
+	for z in cont.keys():
+		var centro: Vector2i = soma[z] / int(cont[z])
+		t += "- %s: ~%d células, centro perto de (%d,%d)\n" % [z, int(cont[z]), centro.x, centro.y]
+	return t
 
 
 func redimensionar_tabuleiro(nova_largura: int, nova_profundidade: int) -> bool:
@@ -718,6 +930,9 @@ func redimensionar_tabuleiro(nova_largura: int, nova_profundidade: int) -> bool:
 	for celula in alturas.keys():
 		if not celula_valida(celula):
 			definir_altura(celula, 0)
+	for celula in zonas.keys():
+		if not celula_valida(celula):
+			zonas.erase(celula)
 
 	cursor_celula = Vector2i(
 		clampi(cursor_celula.x, 0, largura_tabuleiro - 1),
@@ -964,14 +1179,17 @@ func mover_peca(origem: Vector2i, destino: Vector2i, caminho: Array = []) -> boo
 		historico.pop_front()
 	ficha["historico"] = historico
 
+	if peca.has_meta("movimento"):
+		var anterior: Tween = peca.get_meta("movimento")
+		if anterior.is_running():
+			anterior.kill()
 	var animacao := peca.create_tween()
+	peca.set_meta("movimento", animacao)
 	if caminho.is_empty():
 		animacao.tween_property(peca, "position", _pos_peca(destino), 0.25)
 	else:
 		for c in caminho:
 			animacao.tween_property(peca, "position", _pos_peca(c), 0.12)
-	if modo == "exploracao":
-		salvar_mundo()
 	return true
 
 
@@ -1050,7 +1268,7 @@ func _custo_do_passo(a: Vector2i, b: Vector2i) -> int:
 
 
 # Devolve {célula: custo}. Se "previos" for passado, é preenchido com {célula: célula anterior}.
-func _dijkstra(origem: Vector2i, limite: int, considerar_pecas: bool, previos: Dictionary = {}) -> Dictionary:
+func _dijkstra(origem: Vector2i, limite: int, considerar_pecas: bool, previos: Dictionary = {}, limitar_a_cena: bool = false) -> Dictionary:
 	var custos: Dictionary = {origem: 0}
 	var baldes: Array = [[origem]]
 	var c: int = 0
@@ -1068,6 +1286,8 @@ func _dijkstra(origem: Vector2i, limite: int, considerar_pecas: bool, previos: D
 						continue
 					var viz: Vector2i = atual + Vector2i(dx, dz)
 					if not celula_valida(viz):
+						continue
+					if limitar_a_cena and not _na_area_da_cena(viz):
 						continue
 					if considerar_pecas and pecas.has(viz):
 						continue
@@ -1110,6 +1330,18 @@ func _reconstruir_caminho(previos: Dictionary, origem: Vector2i, destino: Vector
 
 
 # Linha de visão: nenhum obstáculo entre as duas células (algoritmo de Bresenham)
+func _alvo_ao_lado(origem: Vector2i, alvo: Vector2i) -> bool:
+	if distancia(origem, alvo) > 1:
+		return false
+	if origem.x != alvo.x and origem.y != alvo.y:
+		return not eh_obstaculo(Vector2i(alvo.x, origem.y)) and not eh_obstaculo(Vector2i(origem.x, alvo.y))
+	return true
+
+
+func alvo_visivel(celula: Vector2i) -> bool:
+	return celula_valida(celula_jogador) and distancia(celula_jogador, celula) <= 12 and linha_de_visao(celula_jogador, celula)
+
+
 func linha_de_visao(a: Vector2i, b: Vector2i) -> bool:
 	var x0: int = a.x
 	var y0: int = a.y
@@ -1299,8 +1531,8 @@ func jogador_atacar(alvo_cel: Vector2i) -> bool:
 	if modo != "combate":
 		_mostrar_aviso("Fora de combate. Diga ao Mestre no chat que você quer atacar (ou aperte K para iniciar o combate).")
 		return false
-	if turno_atual != Turno.JOGADOR or turno_em_andamento:
-		_mostrar_aviso("Não é o seu turno!")
+	if turno_atual != Turno.JOGADOR or turno_em_andamento or _em_movimento(celula_jogador):
+		_mostrar_aviso("Aguarde o movimento ou a vez de Kuzin.")
 		return false
 	if celula_jogador == CELULA_INVALIDA:
 		return false
@@ -1329,11 +1561,8 @@ func jogador_atacar(alvo_cel: Vector2i) -> bool:
 func mover_jogador(destino: Vector2i) -> bool:
 	if fim_de_jogo:
 		return false
-	var livre: bool = movimento_livre and modo != "combate"
-	if modo != "combate" and not livre:
-		_mostrar_aviso("Fora de combate quem move você é o Mestre: diga no chat para onde quer ir (ex.: \"vou até a cabana\").")
-		return false
-	if not livre and (turno_atual != Turno.JOGADOR or turno_em_andamento):
+	var livre: bool = modo != "combate"
+	if not livre and (turno_atual != Turno.JOGADOR or turno_em_andamento or _em_movimento(celula_jogador)):
 		_mostrar_aviso("Não é o seu turno! Aguarde.")
 		return false
 	if celula_jogador == CELULA_INVALIDA:
@@ -1342,19 +1571,33 @@ func mover_jogador(destino: Vector2i) -> bool:
 	if destino == celula_jogador:
 		return false
 
-	var limite_mov: int = LIMITE_EXPLORACAO if livre else movimento_restante
+	if livre:
+		if not _pode_andar_na_cena():
+			return false
+		if not exploracao_liberada:
+			_mostrar_aviso("Escreva 'quero explorar' no chat para liberar o movimento nesta cena.")
+			return false
+		if not _na_area_da_cena(destino):
+			_mostrar_aviso("Limite da cena. Diga ao Mestre para onde quer ir.")
+			return false
+	var limite_mov: int = LIMITE_CLIQUE if livre else movimento_restante
 	var previos: Dictionary = {}
-	var alcance: Dictionary = _dijkstra(celula_jogador, limite_mov, true, previos)
+	var alcance: Dictionary = _dijkstra(celula_jogador, limite_mov, true, previos, livre)
 	if not alcance.has(destino):
-		_mostrar_aviso("Fora do alcance! Você ainda pode andar %d de movimento (subir custa mais, obstáculos bloqueiam)." % movimento_restante)
+		if livre:
+			_mostrar_aviso("Não dá para chegar lá: está longe demais (máx. %d passos num clique) ou o caminho está bloqueado (porta fechada? árvores?)." % LIMITE_CLIQUE)
+		else:
+			_mostrar_aviso("Fora do alcance! Você ainda pode andar %d de movimento (subir custa mais, obstáculos bloqueiam)." % movimento_restante)
 		return false
 
 	var custo: int = alcance[destino]
 	var caminho: Array = _reconstruir_caminho(previos, celula_jogador, destino)
+	if livre:
+		aviso = ""
+		return _andar_na_cena(caminho, false)
 	if not mover_peca(celula_jogador, destino, caminho):
 		return false
-	if not livre:
-		movimento_restante -= custo
+	movimento_restante -= custo
 	aviso = ""
 	_atualizar_destaques()
 	_atualizar_interface()
@@ -1387,12 +1630,13 @@ func _mestre() -> Node:
 const RAIO_DE_AMEACA: int = 8     # o Mestre só pode iniciar combate se algum inimigo estiver a esta distância do Kuzin
 
 
-func _inimigo_proximo(raio: int) -> bool:
+func _inimigo_proximo(raio: int, posicao: Vector2i = CELULA_INVALIDA) -> bool:
 	if celula_jogador == CELULA_INVALIDA:
 		return false
 	var minha: Dictionary = ficha_em(celula_jogador)
+	var origem: Vector2i = celula_jogador if posicao == CELULA_INVALIDA else posicao
 	for c in pecas.keys():
-		if sao_hostis(minha, ficha_em(c)) and distancia(celula_jogador, c) <= raio:
+		if sao_hostis(minha, ficha_em(c)) and distancia(origem, c) <= raio:
 			return true
 	return false
 
@@ -1430,6 +1674,9 @@ func iniciar_combate(motivo: String = "", origem: String = "jogo") -> bool:
 		partes.append("%s %d" % [r["nome"], r["valor"]])
 
 	modo = "combate"
+	var mestre: Node = _mestre()
+	if mestre != null and mestre.conversa_atual() != "":
+		mestre.encerrar_conversa()
 	rodada = 1
 	_limpar_debug()
 	_log("COMBATE! " + ("Motivo: " + motivo.strip_edges() + ". " if motivo.strip_edges() != "" else "") + "Iniciativa: " + ", ".join(partes) + ".")
@@ -1445,6 +1692,8 @@ func encerrar_combate() -> bool:
 		_falhar("Não há combate em andamento.")
 		return false
 	modo = "exploracao"
+	if not _na_area_da_cena(celula_jogador):
+		centro_cena = celula_jogador
 	ator_atual = ""
 	turno_atual = Turno.JOGADOR
 	turno_em_andamento = false
@@ -1457,6 +1706,9 @@ func encerrar_combate() -> bool:
 
 
 func _loop_de_combate() -> void:
+	for celula in pecas.keys():
+		while modo == "combate" and _em_movimento(celula):
+			await get_tree().process_frame
 	while modo == "combate" and not fim_de_jogo:
 		for nome in ordem_iniciativa.duplicate():
 			if modo != "combate" or fim_de_jogo:
@@ -1569,6 +1821,17 @@ func _objeto_bloqueia(obj: Dictionary) -> bool:
 	return not ESTADOS_LIVRES.has(str(obj["estado"]))
 
 
+# Modo lote: o gerador cria centenas de árvores sem recalcular tudo a cada uma
+func iniciar_lote() -> void:
+	_lote = true
+
+
+func finalizar_lote() -> void:
+	_lote = false
+	_recalcular_obstaculos()
+	_atualizar_destaques()
+
+
 func _recalcular_obstaculos() -> void:
 	obstaculos.clear()
 	for nome in objetos.keys():
@@ -1618,7 +1881,7 @@ func criar_objeto(nome: String, modelo: String, celula: Vector2i) -> bool:
 		if celula_ocupada(celula):
 			_falhar("Tem alguém na célula (%d,%d); não dá para colocar %s ali." % [celula.x, celula.y, modelo])
 			return false
-		if not _objetos_na_celula(celula).is_empty():
+		if not _lote and not _objetos_na_celula(celula).is_empty():
 			_falhar("Já existe um objeto na célula (%d,%d)." % [celula.x, celula.y])
 			return false
 
@@ -1629,7 +1892,7 @@ func criar_objeto(nome: String, modelo: String, celula: Vector2i) -> bool:
 		"estado": str((dados["estados"] as Array)[0]), "dono": "", "no": no}
 	objetos[nome_final] = obj
 	_nome_criado_por_ultimo = nome_final
-	if modelo != "muro" and modelo != "parede":
+	if modelo != "muro" and modelo != "parede" and modelo != "arvore":
 		var rot := Label3D.new()
 		rot.text = nome_final
 		rot.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -1642,6 +1905,10 @@ func criar_objeto(nome: String, modelo: String, celula: Vector2i) -> bool:
 		no.add_child(rot)
 	_posicionar_objeto(obj)
 	_aplicar_estado_visual(obj)
+	if _lote:
+		if bool(dados["bloqueia"]):
+			obstaculos[celula] = true      # no modo lote só anota o obstáculo (rápido)
+		return true
 	_recalcular_obstaculos()
 	_atualizar_destaques()
 	print("Objeto '", nome_final, "' (", modelo, ") em ", celula)
@@ -1949,6 +2216,10 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			if origem == CELULA_INVALIDA:
 				return "FALHOU: não existe ninguém chamado '%s'. %s" % [alvo, _lista_de_nomes()]
 			var ficha: Dictionary = ficha_em(origem)
+			if origem == celula_jogador:
+				return "FALHOU: a posição de Kuzin só muda por ação direta do jogador."
+			if agendas.has(ficha["nome"]):
+				return "FALHOU: %s se move pela própria agenda." % ficha["nome"]
 			var destino: Vector2i = Vector2i(x, z)
 			if not celula_valida(destino):
 				return "FALHOU: destino (%d,%d) fora do tabuleiro (x de 0 a %d, z de 0 a %d)." % [x, z, largura_tabuleiro - 1, profundidade_tabuleiro - 1]
@@ -1958,9 +2229,21 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			var alcance: Dictionary = _dijkstra(origem, LIMITE_EXPLORACAO, true, previos)
 			if not alcance.has(destino):
 				return "FALHOU: %s não consegue chegar a (%d,%d): está bloqueado por obstáculos/personagens ou é longe demais. Escolha uma célula livre perto do destino." % [ficha["nome"], x, z]
-			resultado = mover_peca(origem, destino, _reconstruir_caminho(previos, origem, destino))
+			var caminho: Array = _reconstruir_caminho(previos, origem, destino)
+			var ameaca: bool = false
+			if sao_hostis(ficha_em(celula_jogador), ficha):
+				for i in range(caminho.size()):
+					if distancia(celula_jogador, caminho[i]) <= RAIO_DE_AMEACA:
+						ameaca = true
+						destino = caminho[i]
+						caminho = caminho.slice(0, i + 1)
+						break
+			resultado = mover_peca(origem, destino, caminho)
 			if resultado:
-				return "OK: %s foi para (%d,%d)." % [ficha["nome"], x, z]
+				if ameaca:
+					iniciar_combate("Um inimigo hostil se aproximou de Kuzin")
+				salvar_mundo()
+				return "OK: %s foi para (%d,%d).%s" % [ficha["nome"], destino.x, destino.y, " O combate começou." if ameaca else ""]
 		"colocar":
 			if _contar_npcs() >= MAX_NPCS:
 				return "FALHOU: já existem personagens demais (máximo %d)." % MAX_NPCS
@@ -1975,6 +2258,9 @@ func executar_comando_mestre(comando: Dictionary) -> String:
 			if resultado:
 				_aplicar_conhecimento_do_mestre(Vector2i(x, z), comando)
 				registrar_evento("cena", "%s apareceu na cena (%s)." % [alvo, lado if lado != "" else "criatura"])
+				if modo != "combate" and sao_hostis(ficha_em(celula_jogador), ficha_em(Vector2i(x, z))) and distancia(celula_jogador, Vector2i(x, z)) <= RAIO_DE_AMEACA:
+					if iniciar_combate("Um inimigo hostil apareceu perto de Kuzin"):
+						return "OK: %s apareceu em (%d,%d). O combate começou." % [alvo, x, z]
 				return "OK: %s apareceu em (%d,%d)." % [alvo, x, z]
 		"remover":
 			var cel: Vector2i = _achar_por_nome(alvo)
@@ -2145,6 +2431,10 @@ func _aplicar_conhecimento_do_mestre(celula: Vector2i, comando: Dictionary) -> v
 
 # Pode conversar? (precisa estar perto)
 func pode_conversar_com(nome: String) -> String:
+	if modo == "combate":
+		return "A conversa precisa esperar o fim do combate."
+	if _em_movimento(celula_jogador):
+		return "Aguarde Kuzin chegar antes de conversar."
 	var cel: Vector2i = _achar_por_nome(nome)
 	if cel == CELULA_INVALIDA:
 		return "Não existe ninguém chamado '%s'. %s" % [nome, _lista_de_nomes()]
@@ -2152,19 +2442,19 @@ func pode_conversar_com(nome: String) -> String:
 		return "Kuzin não está em cena."
 	if str(ficha_em(cel).get("lado", "")) == "inimigo":
 		return "%s é um inimigo; não dá para conversar assim." % ficha_em(cel)["nome"]
-	if distancia(celula_jogador, cel) > 3:
+	if distancia(celula_jogador, cel) > 3 or not linha_de_visao(celula_jogador, cel):
 		return "%s está longe demais para conversar. Aproxime-se primeiro (clique ou escreva 'vou até %s')." % [ficha_em(cel)["nome"], ficha_em(cel)["nome"]]
 	return ""
 
 
 # Qual NPC (não inimigo) foi citado no texto do jogador? ("" se nenhum)
-func npc_citado_no_texto(texto: String) -> String:
+func npc_citado_no_texto(texto: String, incluir_inimigos: bool = false) -> String:
 	var t: String = " " + _normalizar(texto) + " "
 	var melhor: String = ""
 	var melhor_tam: int = 0
 	var melhor_pos: int = 9999
 	for c in pecas.keys():
-		if c == celula_jogador or str(ficha_em(c).get("lado", "")) == "inimigo":
+		if c == celula_jogador or (not incluir_inimigos and str(ficha_em(c).get("lado", "")) == "inimigo"):
 			continue
 		var nome: String = str(ficha_em(c)["nome"])
 		for v in _variantes_do_nome(nome):
@@ -2279,7 +2569,8 @@ func salvar_mundo() -> void:
 			"largura": int(p["x1"]) - int(p["x0"]) + 1, "profundidade": int(p["z1"]) - int(p["z0"]) + 1,
 			"lado_porta": str(p["lado_porta"]), "extras": lados_extras, "recursos": (p["recursos"] as Array).duplicate()})
 	var dados: Dictionary = {"versao": 2, "semente": semente_cenario, "premissa": premissa_atual, "mundo": mundo.para_salvar(), "personagens": pers, "objetos": objs,
-		"predios": preds, "alturas": alturas.duplicate()}
+		"predios": preds, "alturas": alturas.duplicate(), "centro_cena": centro_cena,
+		"exploracao_liberada": exploracao_liberada, "minutos_do_mundo": minutos_do_mundo, "agendas": agendas}
 	var f := FileAccess.open(Mundo.ARQUIVO_MUNDO, FileAccess.WRITE)
 	if f != null:
 		f.store_string(var_to_str(dados))
@@ -2378,6 +2669,10 @@ func carregar_mundo() -> void:
 		_posicionar_objeto(obj)
 		_aplicar_estado_visual(obj)
 
+	centro_cena = dados.get("centro_cena", celula_jogador)
+	exploracao_liberada = bool(dados.get("exploracao_liberada", false))
+	minutos_do_mundo = int(dados.get("minutos_do_mundo", minutos_do_mundo))
+	agendas = dados.get("agendas", agendas)
 	mundo.carregar_de(dados.get("mundo", {}))
 	modo = "exploracao"
 	_recalcular_obstaculos()
@@ -2466,7 +2761,7 @@ func _alvos_de_movimento() -> Array:
 			continue
 		lista.append({"nome": str(ficha_em(c)["nome"]), "busca": str(ficha_em(c)["nome"]), "celula": c, "tipo": "personagem"})
 	for n in objetos.keys():
-		if str(objetos[n]["modelo"]) == "parede":
+		if str(objetos[n]["modelo"]) in ["parede", "muro", "arvore"] or str(objetos[n]["dono"]) != "":
 			continue
 		var busca: String = str(n)
 		for pn in predios.keys():
@@ -2474,6 +2769,8 @@ func _alvos_de_movimento() -> Array:
 		lista.append({"nome": str(n), "busca": busca, "celula": objetos[n]["celula"], "tipo": "objeto"})
 	for n in predios.keys():
 		lista.append({"nome": str(n), "busca": str(n), "celula": CELULA_INVALIDA, "tipo": "predio"})
+	for zona in COR_ZONAS:
+		lista.append({"nome": str(zona).capitalize(), "busca": zona, "celula": CELULA_INVALIDA, "tipo": "zona"})
 	return lista
 
 
@@ -2489,97 +2786,101 @@ func _variantes_do_nome(nome: String) -> Array:
 
 # Devolve "" se o texto não é um pedido de movimento; senão devolve o FATO (sucesso ou falha) já executado.
 func interpretar_movimento(texto: String) -> String:
-	var t: String = " " + _normalizar(texto) + " "
-	var gatilho: bool = false
+	var t: String = " " + _normalizar(texto.strip_edges()).rstrip(".!?") + " "
+	var inicio: int = -1
 	for g in GATILHOS_DE_MOVIMENTO:
-		if t.contains(g):
-			gatilho = true
-			break
-	if not gatilho or celula_jogador == CELULA_INVALIDA:
+		var pos: int = t.find(" " + g)
+		if pos >= 0 and (inicio < 0 or pos < inicio):
+			inicio = pos
+	if inicio < 0 or celula_jogador == CELULA_INVALIDA:
 		return ""
+	var antes: String = t.left(inicio + 1)
+	if antes.contains(" nao ") or antes.contains(" nunca ") or antes.contains(" sem "):
+		return ""
+	t = t.substr(inicio)
+	for separador in [" e ", ",", ";", " depois ", " entao "]:
+		var corte: int = t.find(separador)
+		if corte >= 0:
+			t = t.left(corte)
+	t = " " + t.strip_edges() + " "
+	var quer_sair: bool = t.begins_with(" saio ") or t.contains(" sair ")
+	if modo == "combate":
+		return "FATO DO JOGO: estamos em combate; Kuzin só se move no próprio turno, clicando no tabuleiro."
+	if _em_movimento(celula_jogador):
+		return "FATO DO JOGO: aguarde Kuzin terminar de andar."
+	var previos: Dictionary = {}
+	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_CLIQUE, true, previos)
 	# acha o alvo citado primeiro
 	var melhor_pos: int = 9999
 	var melhor_var: String = ""
-	for a in _alvos_de_movimento():
+	var alvos: Array = _alvos_de_movimento()
+	for a in alvos:
 		for v in _variantes_do_nome(a["busca"]):
-			var pos: int = t.find(v)
+			var pos: int = t.find(" " + str(v) + " ")
 			if pos >= 0 and (pos < melhor_pos or (pos == melhor_pos and v.length() > melhor_var.length())):
 				melhor_pos = pos
 				melhor_var = v
-	if melhor_var == "":
-		return ""
-	# entre os que têm essa palavra, fica com o mais perto de Kuzin
 	var escolhido: Dictionary = {}
 	var melhor_d: int = 9999
-	for a in _alvos_de_movimento():
-		if not _variantes_do_nome(a["busca"]).has(melhor_var):
+	for a in alvos:
+		if melhor_var == "" or not _variantes_do_nome(a["busca"]).has(melhor_var):
 			continue
 		var cel: Vector2i = a["celula"]
+		var d: int = 0
 		if a["tipo"] == "predio":
-			var pr: Dictionary = predios[a["nome"]]
-			cel = Vector2i((int(pr["x0"]) + int(pr["x1"])) / 2, (int(pr["z0"]) + int(pr["z1"])) / 2)
-		var d: int = distancia(celula_jogador, cel)
-		if a["tipo"] != "predio" and predio_em(cel) != predio_em(celula_jogador):
-			d += 15          # prefere o que está no mesmo lugar (dentro/fora) que Kuzin
+			d = distancia(celula_jogador, predios[a["nome"]]["porta"])
+		elif a["tipo"] != "zona":
+			d = distancia(celula_jogador, cel)
 		if d < melhor_d:
 			melhor_d = d
-			escolhido = a.duplicate()
-			escolhido["celula"] = cel
+			escolhido = a
+	var predio_atual: String = predio_em(celula_jogador)
+	if escolhido.is_empty() and quer_sair and predio_atual != "":
+		escolhido = {"nome": predio_atual, "tipo": "predio"}
 	if escolhido.is_empty():
-		return ""
-	var nome_kuzin: String = str(ficha_em(celula_jogador)["nome"])
-	if modo == "combate":
-		return "FATO DO JOGO: estamos em combate; Kuzin só se move no próprio turno, clicando no tabuleiro. NADA foi movido."
-	var alvo_cel: Vector2i = escolhido["celula"]
-	var destinos: Array = []
-	if escolhido["tipo"] == "predio":
-		var pr2: Dictionary = predios[escolhido["nome"]]
-		var dentro_agora: bool = predio_em(celula_jogador) == escolhido["nome"]
-		var porta_c: Vector2i = pr2["porta"]
-		var fora_c: Vector2i = pr2["fora"]
-		var dentro_c: Vector2i = porta_c + (porta_c - fora_c)
-		var quer_sair: bool = t.contains(" saio") or t.contains(" sair") or t.contains(" saindo")
-		destinos.append(fora_c if (quer_sair or (dentro_agora and not t.contains(" entro"))) else dentro_c)
-	var previos: Dictionary = {}
-	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_EXPLORACAO * 2, true, previos)
+		return "FATO DO JOGO: não encontrei esse destino. Diga o nome de um lugar, zona ou alvo do tabuleiro."
+
 	var destino: Vector2i = CELULA_INVALIDA
-	if escolhido["tipo"] == "predio":
-		for d2 in destinos:
-			if alcance.has(d2) and not celula_ocupada(d2):
-				destino = d2
-		if destino == CELULA_INVALIDA:
-			# tenta qualquer célula livre alcançável perto da porta
-			var melhor_c: int = 9999
-			for c in alcance.keys():
-				if celula_ocupada(c):
+	var melhor_custo: int = 9999
+	var tipo: String = escolhido["tipo"]
+	var nome: String = escolhido["nome"]
+	for c in alcance:
+		var custo: int = alcance[c]
+		if custo >= melhor_custo:
+			continue
+		match tipo:
+			"predio":
+				if quer_sair:
+					var saidas: Array = predios[nome]["portas"]
+					if not saidas.any(func(porta: Dictionary) -> bool: return porta["fora"] == c):
+						continue
+				elif predio_em(c) != nome or _e_porta_do_predio(c, nome):
 					continue
-				var dd: int = distancia(c, destinos[0])
-				if dd <= 1 and int(alcance[c]) < melhor_c:
-					melhor_c = int(alcance[c])
-					destino = c
-	else:
-		var melhor_custo: int = 9999
-		for raio in [1, 2]:
-			for c in alcance.keys():
-				if celula_ocupada(c) and c != celula_jogador:
+			"zona":
+				if predio_em(c) != "" or zona_em(c) != escolhido["busca"]:
 					continue
-				if distancia(c, alvo_cel) != raio:
+			_:
+				var alvo: Vector2i = escolhido["celula"]
+				if distancia(c, alvo) > 1 or not _alvo_ao_lado(c, alvo):
 					continue
-				if int(alcance[c]) < melhor_custo:
-					melhor_custo = int(alcance[c])
-					destino = c
-			if destino != CELULA_INVALIDA:
-				break
+		destino = c
+		melhor_custo = custo
 	if destino == CELULA_INVALIDA:
-		return "FATO DO JOGO: %s tentou ir até %s mas NÃO conseguiu (caminho bloqueado ou longe demais, mais de %d passos). Kuzin continua onde estava." % [nome_kuzin, escolhido["nome"], LIMITE_EXPLORACAO * 2]
+		return "FATO DO JOGO: Kuzin não conseguiu chegar a %s. O caminho está bloqueado ou o destino está longe demais. Ele continua onde estava." % nome
 	if destino == celula_jogador:
-		return "FATO DO JOGO: %s já estava ao lado de %s. Não precisou andar." % [nome_kuzin, escolhido["nome"]]
-	var passos: int = int(alcance[destino])
-	if not mover_peca(celula_jogador, destino, _reconstruir_caminho(previos, celula_jogador, destino)):
-		return "FATO DO JOGO: %s tentou ir até %s mas não conseguiu andar. Kuzin continua onde estava." % [nome_kuzin, escolhido["nome"]]
-	if escolhido["tipo"] == "predio":
-		return "FATO DO JOGO: %s andou %d passos e agora está %s." % [nome_kuzin, passos, lugar_texto(celula_jogador)]
-	return "FATO DO JOGO: %s andou %d passos e agora está ao lado de %s (%s)." % [nome_kuzin, passos, escolhido["nome"], lugar_texto(celula_jogador)]
+		return "FATO DO JOGO: Kuzin já está no destino (%s)." % nome
+	if not _andar_na_cena(_reconstruir_caminho(previos, celula_jogador, destino), true):
+		return "FATO DO JOGO: Kuzin não conseguiu andar. Ele continua onde estava."
+	if modo == "combate":
+		return "FATO DO JOGO: Kuzin chegou a uma posição ameaçada (%s). O movimento foi interrompido e o combate começou." % lugar_texto(celula_jogador)
+	return "FATO DO JOGO: Kuzin chegou %s. Cena atual: %s." % [lugar_texto(celula_jogador), nome_da_cena()]
+
+
+func _e_porta_do_predio(celula: Vector2i, nome: String) -> bool:
+	for porta in predios[nome]["portas"]:
+		if porta["celula"] == celula:
+			return true
+	return false
 
 
 func _normalizar(texto: String) -> String:
@@ -2596,6 +2897,8 @@ func _universo_de_termos(somente_predio: String = "") -> String:
 	var partes: Array = []
 	for n in objetos.keys():
 		if somente_predio != "" and str(objetos[n].get("predio", "")) != somente_predio and predio_em(objetos[n]["celula"]) != somente_predio:
+			continue
+		if str(objetos[n]["modelo"]) == "arvore":
 			continue
 		partes.append(str(n))
 		partes.append(str(objetos[n]["modelo"]))
@@ -2759,13 +3062,29 @@ func descrever_tabuleiro() -> String:
 					faltando.append(rv[0])
 			if not faltando.is_empty():
 				t += "    * NÃO possui: " + ", ".join(faltando) + "\n"
+	var zt: String = resumo_das_zonas()
+	if zt != "":
+		t += "ZONAS DO MAPA (cor do chão):\n" + zt
+	if jog != CELULA_INVALIDA:
+		t += "Kuzin está: %s.\n" % lugar_texto(jog)
 	var lista_obj: String = ""
+	var arvores_perto: int = 0
+	var arvores_total: int = 0
 	for n in objetos.keys():
 		var o: Dictionary = objetos[n]
 		if str(o["modelo"]) == "parede" or str(o["modelo"]) == "muro" or str(o["modelo"]) == "porta":
 			continue
+		if str(o["modelo"]) == "arvore":
+			arvores_total += 1
+			if jog != CELULA_INVALIDA and distancia(jog, o["celula"]) <= 6:
+				arvores_perto += 1
+			continue
+		if jog != CELULA_INVALIDA and str(o["dono"]) == "" and predio_em(o["celula"]) == "" and distancia(jog, o["celula"]) > 25:
+			continue                      # objeto ao ar livre muito longe: não precisa entrar no prompt
 		var onde: String = "com %s" % o["dono"] if str(o["dono"]) != "" else "em (%d,%d)" % [o["celula"].x, o["celula"].y]
 		lista_obj += "- %s (%s, %s) %s\n" % [n, o["modelo"], o["estado"], onde]
+	if arvores_total > 0:
+		t += "ÁRVORES: %d no mapa (floresta), %d num raio de 6 células de Kuzin (não listadas uma a uma).\n" % [arvores_total, arvores_perto]
 	if lista_obj != "":
 		t += "OBJETOS:\n" + lista_obj
 	t += mundo.diario_para_ia()
@@ -2904,12 +3223,14 @@ func _roda_pertence_a_interface(controle: Control) -> bool:
 
 func _input(event: InputEvent) -> void:
 	var controle: Control = get_viewport().gui_get_hovered_control()
+	var painel_chat: Node = get_tree().get_first_node_in_group("painel_chat")
+	var sobre_chat: bool = painel_chat != null and controle != null and (controle == painel_chat or painel_chat.is_ancestor_of(controle))
 
 	var movimento := event as InputEventMouseMotion
 	if movimento != null:
 		var botao_meio := (movimento.button_mask & MOUSE_BUTTON_MASK_MIDDLE) != 0
 		var alt_com_esquerdo := Input.is_key_pressed(KEY_ALT) and (movimento.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0
-		if camera != null and (botao_meio or alt_com_esquerdo):
+		if camera != null and not sobre_chat and (botao_meio or alt_com_esquerdo):
 			if movimento.shift_pressed:
 				var fator := camera_distancia * 0.0015
 				_deslocar_camera(-movimento.relative.x * fator, movimento.relative.y * fator)
@@ -2930,11 +3251,11 @@ func _input(event: InputEvent) -> void:
 			foco.release_focus()
 
 	if clique.button_index == MOUSE_BUTTON_WHEEL_UP:
-		if not _roda_pertence_a_interface(controle):
+		if not sobre_chat and not _roda_pertence_a_interface(controle):
 			_zoom_camera(ZOOM_RODA)
 		return
 	if clique.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-		if not _roda_pertence_a_interface(controle):
+		if not sobre_chat and not _roda_pertence_a_interface(controle):
 			_zoom_camera(1.0 / ZOOM_RODA)
 		return
 
@@ -2942,7 +3263,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if Input.is_key_pressed(KEY_ALT):
 		return
-	if _controle_de_interface(controle):
+	if sobre_chat or _controle_de_interface(controle):
 		return
 
 	var celula := celula_sob_mouse(clique.position)
@@ -2951,14 +3272,19 @@ func _input(event: InputEvent) -> void:
 
 	cursor_celula = celula
 	_atualizar_marcador()
+	# Fora de combate: clicar em alguém ou em um objeto abre o MENU DE AÇÕES (examinar, abrir, falar...)
+	if clique.button_index == MOUSE_BUTTON_RIGHT and modo != "combate" and not fim_de_jogo and celula != celula_jogador:
+		if abrir_menu_de_acoes(celula, clique.position):
+			return
 	if clique.button_index == MOUSE_BUTTON_LEFT:
-		# Clique em inimigo = atacar; clique em célula livre = andar
+		# Em combate: clique em inimigo = atacar; clique em célula livre = andar
 		if celula_ocupada(celula) and celula != celula_jogador:
-			jogador_atacar(celula)
+			if modo == "combate":
+				jogador_atacar(celula)
+			else:
+				_mostrar_aviso("Use o chat ou o botão direito para interagir.")
 		else:
 			mover_jogador(celula)
-	else:
-		remover_personagem_ia(celula)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -3008,10 +3334,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F1:
 			legenda_visivel = not legenda_visivel
 			_atualizar_interface()
-		KEY_F2:
-			movimento_livre = not movimento_livre
-			_mostrar_aviso("Andar livre fora de combate (TESTE): %s" % ("LIGADO" if movimento_livre else "desligado"))
-			_atualizar_destaques()
 		KEY_ESCAPE:
 			var foco2 := get_viewport().gui_get_focus_owner()
 			if foco2 != null:
@@ -3122,7 +3444,9 @@ func _atualizar_interface() -> void:
 	if modo == "combate":
 		texto = "COMBATE  |  Rodada %d  |  Vez de: %s%s\n" % [rodada, ator_atual, "  (VOCÊ)" if turno_atual == Turno.JOGADOR else ""]
 	else:
-		texto = "EXPLORAÇÃO (sem turnos)  |  Converse com o Mestre no chat para agir\n"
+		var hora: int = minutos_do_mundo % 1440
+		texto = "CENA: %s  |  Dia %d, %02d:%02d\n" % [nome_da_cena(), floori(minutos_do_mundo / 1440.0) + 1, floori(hora / 60.0), hora % 60]
+		texto += "Clique para andar na cena. Use o chat para agir ou sair.\n" if exploracao_liberada else "Escreva 'quero explorar' para andar por clique.\n"
 	if celula_jogador == CELULA_INVALIDA:
 		texto += "Jogador: fora do tabuleiro"
 	else:
@@ -3326,6 +3650,222 @@ func _criar_destaques() -> void:
 
 
 # Verde = onde o jogador ainda pode andar. Vermelho = inimigos que ele pode atacar agora.
+# ===============================================================
+# CLIQUE NO MUNDO: MENU DE AÇÕES  (Etapa 2 do plano)
+# Clicar numa pessoa ou objeto abre um menu com o que dá para FAZER com ele.
+# Os verbos vêm de mundo.gd (verbos_de): cada objeto sabe o que aceita.
+# ===============================================================
+var _menu_acoes: PopupMenu = null
+var _menu_itens: Array = []
+
+
+func _dizer(texto: String) -> void:
+	log_de_combate.emit(texto)
+	_mostrar_aviso(texto)
+
+
+func _objetos_clicaveis(celula: Vector2i) -> Array:
+	var lista: Array = []
+	for n in objetos.keys():
+		var o: Dictionary = objetos[n]
+		if o["celula"] != celula or str(o["dono"]) != "":
+			continue
+		var m: String = str(o["modelo"])
+		if m == "parede" or m == "muro" or m == "arvore":
+			continue
+		lista.append(str(n))
+	return lista
+
+
+# Monta e mostra o menu. Devolve false se não há nada para fazer naquela célula (aí o clique vira "andar").
+func abrir_menu_de_acoes(celula: Vector2i, posicao_tela: Vector2) -> bool:
+	var itens: Array = []
+	if celula_ocupada(celula):
+		var f: Dictionary = ficha_em(celula)
+		var nome: String = str(f["nome"])
+		itens.append({"rotulo": "Examinar: %s" % nome, "tipo": "pessoa", "verbo": "examinar", "alvo": nome})
+		if str(f["lado"]) == "inimigo":
+			itens.append({"rotulo": "Atacar: %s" % nome, "tipo": "pessoa", "verbo": "atacar", "alvo": nome})
+		else:
+			itens.append({"rotulo": "Falar com %s" % nome, "tipo": "pessoa", "verbo": "falar", "alvo": nome})
+	else:
+		for n in _objetos_clicaveis(celula):
+			for verbo in verbos_do_objeto(n):
+				itens.append({"rotulo": "%s: %s" % [str(verbo).capitalize(), n], "tipo": "objeto", "verbo": str(verbo), "alvo": n})
+	if itens.is_empty():
+		return false
+	itens.append({"rotulo": "Ir até aqui", "tipo": "ir", "verbo": "ir", "alvo": "", "celula": celula})
+
+	if _menu_acoes == null:
+		_menu_acoes = PopupMenu.new()
+		_menu_acoes.id_pressed.connect(_ao_escolher_acao)
+		add_child(_menu_acoes)
+	_menu_acoes.clear()
+	_menu_itens = itens
+	for i in range(itens.size()):
+		_menu_acoes.add_item(str(itens[i]["rotulo"]), i)
+	_menu_acoes.popup(Rect2i(Vector2i(int(posicao_tela.x), int(posicao_tela.y)), Vector2i.ZERO))
+	return true
+
+
+func _ao_escolher_acao(indice: int) -> void:
+	if indice < 0 or indice >= _menu_itens.size():
+		return
+	var item: Dictionary = _menu_itens[indice]
+	match str(item["tipo"]):
+		"ir":
+			mover_jogador(item["celula"])
+		"objeto":
+			acao_do_jogador(str(item["alvo"]), str(item["verbo"]))
+		"pessoa":
+			acao_com_pessoa(str(item["alvo"]), str(item["verbo"]))
+
+
+func _rolar_d20(bonus: int, dificuldade: int) -> Dictionary:
+	var dado: int = randi_range(1, 20)
+	return {"dado": dado, "total": dado + bonus, "ok": dado + bonus >= dificuldade, "texto": "d20 = %d %s%d = %d contra CD %d" % [dado, "+" if bonus >= 0 else "", bonus, dado + bonus, dificuldade]}
+
+
+func acao_com_pessoa(nome: String, verbo: String) -> void:
+	var cel: Vector2i = _achar_por_nome(nome)
+	if cel == CELULA_INVALIDA or modo == "combate" or not _pode_andar_na_cena():
+		return
+	var f: Dictionary = ficha_em(cel)
+	match verbo:
+		"examinar":
+			if not alvo_visivel(cel):
+				_dizer("Você não consegue ver %s daqui." % nome)
+				return
+			avancar_relogio(1)
+			var t: String = "%s (%s)." % [nome, str(f.get("classe", "")).strip_edges()]
+			if str(f.get("atividade", "")) != "":
+				t += " Está " + str(f["atividade"]) + "."
+			_dizer("Você observa " + t)
+		"falar":
+			pedido_de_conversa.emit(nome)
+		"atacar":
+			if not sao_hostis(ficha_em(celula_jogador), f) or melhor_ataque(celula_jogador, cel).is_empty():
+				_dizer("O alvo está fora do alcance do ataque.")
+				return
+			if iniciar_combate("Kuzin atacou %s." % nome, "jogo"):
+				_dizer("O combate começou! Clique em %s para atacar (chegue perto para corpo a corpo)." % nome)
+
+
+# Menu de cliques: usa as mesmas regras de alcance das ações por texto.
+func acao_do_jogador(nome_obj: String, verbo: String) -> void:
+	if not objetos.has(nome_obj) or modo == "combate" or not _pode_andar_na_cena():
+		return
+	if verbo not in verbos_do_objeto(nome_obj):
+		return
+	var r: Dictionary = executar_verbo_objeto(nome_obj, verbo)
+	if bool(r["ok"]) or bool(r["rolou"]):
+		avancar_relogio(5 if verbo == "vasculhar" else 1)
+	if bool(r["rolou"]):
+		log_de_combate.emit(str(r["texto"]))
+	_dizer(str(r["texto"]))
+
+
+# O CORAÇÃO das ações físicas (usado pelo menu de cliques E pelo texto digitado).
+# O jogo confere a POSIÇÃO: Kuzin precisa estar ao lado do objeto (distância <= 1).
+# Devolve {"ok": bool (a ação aconteceu?), "texto": frase em 2ª pessoa, "rolou": bool (houve dado?)}
+func executar_verbo_objeto(nome_obj: String, verbo: String) -> Dictionary:
+	ultimo_motivo = ""
+	if not objetos.has(nome_obj) or celula_jogador == CELULA_INVALIDA:
+		return {"ok": false, "texto": "Isso não existe aqui.", "rolou": false}
+	var obj: Dictionary = objetos[nome_obj]
+	var prop: Dictionary = propriedades_do_objeto(nome_obj)
+	var eu: String = str(ficha_em(celula_jogador)["nome"])
+	var no_inventario: bool = str(obj["dono"]) == eu
+	if verbo == "examinar":
+		if not no_inventario and not alvo_visivel(obj["celula"]):
+			return {"ok": false, "texto": "Você não consegue ver %s daqui." % nome_obj, "rolou": false}
+		var t0: String = "Você examina %s (%s, %s)." % [nome_obj, str(obj["modelo"]), str(obj["estado"])]
+		if bool(obj.get("trancado", false)):
+			t0 += " Está trancada."
+		return {"ok": true, "texto": t0, "rolou": false}
+	if not no_inventario and not _alvo_ao_lado(celula_jogador, obj["celula"]):
+		return {"ok": false, "rolou": false, "texto": "Você está longe demais de %s (a %d células). Aproxime-se primeiro; nada aconteceu." % [nome_obj, distancia(celula_jogador, obj["celula"])]}
+	var texto: String = ""
+	var ok: bool = true
+	var rolou: bool = false
+	match verbo:
+		"abrir":
+			if bool(obj.get("trancado", false)):
+				texto = "%s está trancada. Você precisa destrancar (com a chave) ou arrombar." % nome_obj
+				ok = false
+			elif mudar_estado(nome_obj, "aberto"):
+				texto = "Você abre %s." % nome_obj
+		"fechar":
+			if mudar_estado(nome_obj, "fechado"):
+				texto = "Você fecha %s." % nome_obj
+		"acender":
+			if mudar_estado(nome_obj, "aceso"):
+				texto = "Você acende %s." % nome_obj
+		"apagar":
+			if mudar_estado(nome_obj, "apagado"):
+				texto = "Você apaga %s." % nome_obj
+		"pegar":
+			if dar_item(nome_obj, eu):
+				texto = "Você pega %s." % nome_obj
+		"soltar":
+			if soltar_item(nome_obj):
+				texto = "Você solta %s no chão." % nome_obj
+		"empurrar":
+			var d: Vector2i = obj["celula"] - celula_jogador
+			var dest: Vector2i = obj["celula"] + Vector2i(signi(d.x), signi(d.y))
+			if celula_valida(dest) and not eh_obstaculo(dest) and not celula_ocupada(dest) and mover_objeto(nome_obj, dest):
+				texto = "Você empurra %s." % nome_obj
+			else:
+				texto = "%s não se move: tem algo atrás." % nome_obj
+				ok = false
+		"trancar":
+			if trancar_objeto(nome_obj, true):
+				texto = "Você tranca %s." % nome_obj
+		"destrancar":
+			var tem_chave: bool = false
+			for it in ficha_em(celula_jogador)["inventario"]:
+				if str(it).to_lower().contains("chave"):
+					tem_chave = true
+			if not tem_chave:
+				texto = "Você não tem a chave de %s." % nome_obj
+				ok = false
+			elif trancar_objeto(nome_obj, false):
+				texto = "Você destranca %s com a chave." % nome_obj
+		"arrombar":
+			rolou = true
+			var r: Dictionary = _rolar_d20(2, maxi(int(prop.get("quebrar_dc", 15)), 10))
+			ok = bool(r["ok"])
+			if ok:
+				obj["trancado"] = false
+				mudar_estado(nome_obj, "aberto")
+				texto = "🎲 %s: sucesso! Você arromba %s." % [r["texto"], nome_obj]
+			else:
+				texto = "🎲 %s: falhou. %s resiste." % [r["texto"], nome_obj]
+			registrar_evento("acao", "Kuzin tentou arrombar %s (%s)." % [nome_obj, "conseguiu" if ok else "falhou"])
+		"quebrar":
+			rolou = true
+			var r2: Dictionary = _rolar_d20(2, maxi(int(prop.get("quebrar_dc", 12)), 8))
+			ok = bool(r2["ok"])
+			if ok:
+				var estados: Array = CATALOGO_OBJETOS[str(obj["modelo"])]["estados"]
+				mudar_estado(nome_obj, "quebrado" if estados.has("quebrado") else "destruido")
+				texto = "🎲 %s: sucesso! Você quebra %s." % [r2["texto"], nome_obj]
+			else:
+				texto = "🎲 %s: falhou. %s aguenta o golpe." % [r2["texto"], nome_obj]
+			registrar_evento("acao", "Kuzin tentou quebrar %s (%s)." % [nome_obj, "conseguiu" if ok else "falhou"])
+		"vasculhar":
+			rolou = true
+			var r3: Dictionary = _rolar_d20(2, 12)
+			texto = "🎲 %s: %s" % [r3["texto"], "você revira tudo e não acha nada fora do comum." if bool(r3["ok"]) else "você não percebe nada de especial."]
+		_:
+			texto = "Você não sabe como fazer isso com %s." % nome_obj
+			ok = false
+	if texto == "":
+		texto = "Não deu certo: " + str(ultimo_motivo)
+		ok = false
+	return {"ok": ok, "texto": texto, "rolou": rolou}
+
+
 func _atualizar_destaques() -> void:
 	if destaques == null:
 		return
@@ -3334,18 +3874,10 @@ func _atualizar_destaques() -> void:
 
 	if celula_jogador == CELULA_INVALIDA or fim_de_jogo:
 		return
-	var livre: bool = movimento_livre and modo != "combate"
 	if modo == "combate" and turno_atual != Turno.JOGADOR:
 		return
-	if modo != "combate" and not livre:
-		return
-
-	if livre:
-		var alcance_livre := _dijkstra(celula_jogador, LIMITE_EXPLORACAO, true)
-		for celula in alcance_livre.keys():
-			if celula != celula_jogador:
-				_adicionar_quadrado(celula, material_destaque)
-		return
+	if modo != "combate":
+		return          # fora de combate não pintamos o alcance (o mapa é grande); é só clicar para andar
 
 	if movimento_restante > 0:
 		var alcance := _dijkstra(celula_jogador, movimento_restante, true)

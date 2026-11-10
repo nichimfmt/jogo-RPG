@@ -13,6 +13,11 @@ extends RefCounted
 
 const TENTATIVAS: int = 6
 
+# Ajustes que o gerador de mundo muda antes de chamar gerar_predio (e restaura depois):
+static var folga: int = 1                                   # células vazias mínimas entre esta construção e qualquer outra coisa
+static var virar_para: Vector2i = Vector2i(-9999, -9999)    # se definido, a porta da frente SEMPRE olha para este ponto (a praça)
+static var raio_maximo: int = 36                            # até onde procurar lugar livre
+
 # Faixas de tamanho (largura mín, máx, profundidade mín, máx) por tipo e tamanho
 const TAMANHOS: Dictionary = {
 	"taverna": {"pequeno": [8, 9, 6, 7], "medio": [10, 12, 7, 9], "grande": [13, 15, 9, 11]},
@@ -48,7 +53,9 @@ static func gerar_predio(tab: Node, modelo: String, nome: String, referencia: Ve
 
 		# --- portas ---
 		var frente: String = _lado_virado_para(canto, largura, profundidade, referencia)
-		if rng.randf() > 0.7:
+		if virar_para.x != -9999:
+			frente = _lado_virado_para(canto, largura, profundidade, virar_para)
+		elif rng.randf() > 0.7:
 			frente = ["norte", "sul", "leste", "oeste"][rng.randi_range(0, 3)]
 		var lados_extras: Array = []
 		var oposto: String = str(tab.LADO_OPOSTO[frente])
@@ -110,7 +117,7 @@ static func _celulas_ocupadas(tab: Node) -> Dictionary:
 # Procura um retângulo LIVRE (com 1 célula de folga em volta), do mais perto para o mais longe da referência
 static func _achar_lugar(tab: Node, largura: int, profundidade: int, referencia: Vector2i, rng: RandomNumberGenerator) -> Vector2i:
 	var ocupadas: Dictionary = _celulas_ocupadas(tab)
-	for raio in range(3, 36):
+	for raio in range(3, raio_maximo):
 		var candidatos: Array = []
 		for dx in range(-raio, raio + 1):
 			for dz in range(-raio, raio + 1):
@@ -132,8 +139,8 @@ static func _achar_lugar(tab: Node, largura: int, profundidade: int, referencia:
 static func _retangulo_livre(tab: Node, ocupadas: Dictionary, canto: Vector2i, largura: int, profundidade: int) -> bool:
 	if not tab.celula_valida(canto) or not tab.celula_valida(canto + Vector2i(largura - 1, profundidade - 1)):
 		return false
-	for x in range(canto.x - 1, canto.x + largura + 1):
-		for z in range(canto.y - 1, canto.y + profundidade + 1):
+	for x in range(canto.x - folga, canto.x + largura + folga):
+		for z in range(canto.y - folga, canto.y + profundidade + folga):
 			if ocupadas.has(Vector2i(x, z)):
 				return false
 	return true

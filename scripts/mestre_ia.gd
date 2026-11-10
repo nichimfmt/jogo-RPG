@@ -280,6 +280,19 @@ func jogador_agiu(texto: String) -> void:
 			continue
 		var origem: Vector2i = tab.celula_jogador
 		var fato: String = tab.interpretar_movimento(acao).trim_prefix("FATO DO JOGO: ")
+		if fato == tab.DESTINO_INDEFINIDO and not modo_rapido:
+			_definir_ocupado(true)
+			var resolucao: Dictionary = await _interpretar_destino(tab, acao)
+			_definir_ocupado(false)
+			if not is_instance_valid(tab):
+				return
+			if resolucao.has("pergunta"):
+				resultados.append(resolucao["pergunta"])
+				break
+			if tab.modo == "combate" or tab.celula_jogador != origem:
+				resultados.append("A situação mudou. Diga o que Kuzin quer fazer agora.")
+				break
+			fato = tab.mover_para_destino_inferido(resolucao["alvo"]).trim_prefix("FATO DO JOGO: ")
 		if fato != "":
 			resultados.append(fato)
 			if origem != tab.celula_jogador:
@@ -322,6 +335,73 @@ func jogador_agiu(texto: String) -> void:
 		mestre_falou.emit("Não entendi a ação. Tente dizer o que você faz e qual é o alvo.")
 	else:
 		await _consultar("JOGADOR (Kuzin) diz/faz: " + texto, texto)
+
+
+func _interpretar_destino(tab: Node, texto: String) -> Dictionary:
+	var opcoes: Dictionary = {}
+	var linhas: Array[String] = []
+	var guarda_visivel: String = ""
+	for alvo in tab.destinos_visiveis_para_ia():
+		var id: String = "destino_%d" % (opcoes.size() + 1)
+		opcoes[id] = alvo
+		linhas.append("%s = %s" % [id, alvo["rotulo"]])
+		if guarda_visivel == "" and alvo["tipo"] == "personagem" and tab.ficha_em(alvo["celula"])["modelo"] == "guarda":
+			guarda_visivel = alvo["nome"]
+
+	var ids: Array = ["indefinido"]
+	ids.append_array(opcoes.keys())
+	var boato: String = tab.boato_inicial
+	if boato != "":
+		ids.append("boato_sem_local")
+	var schema: Dictionary = {
+		"type": "object",
+		"properties": {"destino": {"type": "string", "enum": ids}},
+		"required": ["destino"],
+		"additionalProperties": false,
+	}
+	var instrucoes: String = """Você interpreta o destino de uma ordem de movimento num RPG em português. Retorne só o campo destino.
+Use o que Kuzin acabou de ouvir para interpretar ele, ela, eles, lá e descrições de grupos.
+Escolha um código da lista se ele corresponder à referência. Se vários membros visíveis do grupo forem citados como grupo, escolha o primeiro deles.
+Use boato_sem_local se a ordem se refere ao grupo do boato e nenhum membro desse grupo aparece na lista. Um boato não revela uma localização exata.
+Use indefinido se houver ambiguidade ou se a referência não corresponder a nenhum código. Nunca escolha um destino só porque está perto ou porque ele foi mencionado antes."""
+	var mensagens: Array = [{"role": "system", "content": instrucoes}]
+	mensagens.append_array(_historico)
+	var pedido: String = "Boato público desta vila: %s\nDestinos visíveis:\n%s\nOrdem de Kuzin: %s" % [boato, "\n".join(linhas), texto]
+	mensagens.append({"role": "user", "content": pedido})
+	var boato_sem_local: bool = _refere_ao_boato_sem_alvo(tab, texto, boato, linhas)
+	var resposta: Dictionary = {}
+	if esta_pronto():
+		_status("O Mestre está interpretando o destino...")
+		resposta = await _chamar_servidor(mensagens, schema, 0.0)
+	var id: String = str(resposta.get("destino", ""))
+	if opcoes.has(id) and not boato_sem_local:
+		return {"alvo": opcoes[id]}
+	if boato_sem_local or (id == "boato_sem_local" and boato != ""):
+		var sugestao: String = "Você quer perguntar a alguém na vila por pistas?"
+		if guarda_visivel != "":
+			sugestao = "Quer falar com %s e perguntar se há rastros na estrada?" % guarda_visivel
+		return {"pergunta": "Você ouviu o boato, mas ainda não sabe onde encontrar o grupo. " + sugestao}
+	if id == "":
+		return {"pergunta": "Não consegui interpretar o destino agora. Pode dizer o nome da pessoa ou do lugar?"}
+	return {"pergunta": "A quem ou a que lugar você se refere? Se estiver procurando alguém, pode perguntar por pistas."}
+
+
+# A campanha publica o boato, mas a posição dos inimigos continua oculta.
+func _refere_ao_boato_sem_alvo(tab: Node, texto: String, boato: String, alvos: Array[String]) -> bool:
+	var ultima_fala: String = ""
+	for i in range(_historico.size() - 1, -1, -1):
+		if _historico[i].get("role", "") == "assistant":
+			ultima_fala = str(_historico[i].get("content", ""))
+			break
+	var pedido: String = " " + tab._normalizar(texto).strip_edges().rstrip(".!?") + " "
+	var boato_normalizado: String = tab._normalizar(boato)
+	var fala_normalizada: String = tab._normalizar(ultima_fala)
+	var visiveis: String = tab._normalizar(" ".join(alvos))
+	for grupo in ["goblin", "bandido", "esqueleto", "lobo"]:
+		if boato_normalizado.contains(grupo) and not visiveis.contains(grupo):
+			if pedido.contains(grupo) or (pedido.contains(" eles ") and fala_normalizada.contains(grupo)):
+				return true
+	return false
 
 
 func _responder_resultado(pedido: String, resultado: String) -> void:
@@ -539,7 +619,7 @@ func iniciar_aventura() -> void:
 		await get_tree().process_frame
 	_sincronizar_com_mundo()
 	if modo_rapido or not esta_pronto():
-		mestre_falou.emit(_falso.abertura(_tabuleiro()))
+		_responder_resultado("(início)", _falso.abertura(_tabuleiro()))
 		return
 	await _consultar(TEXTO_ABERTURA, "(início)", "abertura", _falso.abertura(_tabuleiro()))
 
@@ -682,17 +762,27 @@ func _schema_da_resposta(tab: Node) -> Dictionary:
 
 
 func _chamar_servidor(mensagens: Array, schema: Dictionary, temperatura: float = TEMPERATURA) -> Dictionary:
+	var so_destino: bool = schema.get("properties", {}).has("destino")
 	var corpo: Dictionary = {
 		"messages": mensagens,
 		"temperature": temperatura,
-		"max_tokens": MAX_TOKENS_RESPOSTA,
+		"max_tokens": 24 if so_destino else MAX_TOKENS_RESPOSTA,
 		"response_format": {"type": "json_schema", "json_schema": {"name": "resposta", "strict": true, "schema": schema}},
 	}
-	var erro: int = _http.request(_url("/v1/chat/completions"), PackedStringArray(["Content-Type: application/json"]),
+	var requisicao: HTTPRequest = _http
+	if so_destino:
+		requisicao = HTTPRequest.new()
+		requisicao.timeout = 15.0
+		add_child(requisicao)
+	var erro: int = requisicao.request(_url("/v1/chat/completions"), PackedStringArray(["Content-Type: application/json"]),
 		HTTPClient.METHOD_POST, JSON.stringify(corpo))
 	if erro != OK:
+		if so_destino:
+			requisicao.queue_free()
 		return {}
-	var r: Array = await _http.request_completed
+	var r: Array = await requisicao.request_completed
+	if so_destino:
+		requisicao.queue_free()
 	if int(r[0]) != HTTPRequest.RESULT_SUCCESS or int(r[1]) != 200:
 		print("[MestreIA] HTTP ", r[1], " ", (r[3] as PackedByteArray).get_string_from_utf8().left(300))
 		return {}

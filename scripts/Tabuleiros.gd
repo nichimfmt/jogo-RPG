@@ -2869,6 +2869,7 @@ const RECURSOS_VERIFICAVEIS: Array = [["alçapão", "alcapao"], ["escada", "esca
 # "vou até a bancada", "me aproximo do Barnaby", "entro na casa"...
 # O jogo acha o alvo, calcula o caminho, move o Kuzin e devolve um FATO verdadeiro para o Mestre narrar.
 # ---------------------------------------------------------------
+const DESTINO_INDEFINIDO: String = "não encontrei esse destino. Diga o nome de um lugar, zona ou alvo do tabuleiro."
 const GATILHOS_DE_MOVIMENTO: Array[String] = ["aproxim", "chego", "dirij", "caminho", "corro", "entro", "entrar ", "saio", "sair ", "me posiciono",
 	"vou ate", "vou para", "vou pra", "vou a ", "vou ao", "vou na", "vou no", "vou em", "indo ate", "ir ate", "ir para", "ir pra",
 	"quero ir", "vamos ate", "me movo", "me mexo", "ando ate", "ando ao", "ando para", "chegar perto", "ficar perto", "me afasto de"]
@@ -2929,8 +2930,6 @@ func interpretar_movimento(texto: String) -> String:
 		return "FATO DO JOGO: estamos em combate; Kuzin só se move no próprio turno, clicando no tabuleiro."
 	if _em_movimento(celula_jogador):
 		return "FATO DO JOGO: aguarde Kuzin terminar de andar."
-	var previos: Dictionary = {}
-	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_CLIQUE, true, previos)
 	# acha o alvo citado primeiro
 	var melhor_pos: int = 9999
 	var melhor_var: String = ""
@@ -2959,8 +2958,44 @@ func interpretar_movimento(texto: String) -> String:
 	if escolhido.is_empty() and quer_sair and predio_atual != "":
 		escolhido = {"nome": predio_atual, "tipo": "predio"}
 	if escolhido.is_empty():
-		return "FATO DO JOGO: não encontrei esse destino. Diga o nome de um lugar, zona ou alvo do tabuleiro."
+		return "FATO DO JOGO: " + DESTINO_INDEFINIDO
+	return _mover_para_destino(escolhido, quer_sair)
 
+
+func destinos_visiveis_para_ia() -> Array:
+	var visiveis: Array = []
+	for alvo in _alvos_de_movimento():
+		var tipo: String = alvo["tipo"]
+		if tipo == "zona":
+			continue
+		var celula: Vector2i = alvo["celula"]
+		if tipo == "predio":
+			celula = predios[alvo["nome"]]["porta"]
+		if not alvo_visivel(celula):
+			continue
+		var rotulo: String = "%s %s" % [tipo, alvo["nome"]]
+		if tipo == "personagem":
+			rotulo = "%s (%s)" % [alvo["nome"], titulo_publico(ficha_em(celula))]
+		alvo["rotulo"] = rotulo
+		alvo["distancia"] = distancia(celula_jogador, celula)
+		visiveis.append(alvo)
+	visiveis.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if (a["tipo"] == "personagem") != (b["tipo"] == "personagem"):
+			return a["tipo"] == "personagem"
+		return int(a["distancia"]) < int(b["distancia"]))
+	return visiveis.slice(0, 24)
+
+
+func mover_para_destino_inferido(referencia: Dictionary) -> String:
+	for alvo in destinos_visiveis_para_ia():
+		if alvo["nome"] == referencia["nome"] and alvo["tipo"] == referencia["tipo"]:
+			return _mover_para_destino(alvo)
+	return "FATO DO JOGO: Kuzin não consegue ver esse destino daqui agora."
+
+
+func _mover_para_destino(escolhido: Dictionary, quer_sair: bool = false) -> String:
+	var previos: Dictionary = {}
+	var alcance: Dictionary = _dijkstra(celula_jogador, LIMITE_CLIQUE, true, previos)
 	var destino: Vector2i = CELULA_INVALIDA
 	var melhor_custo: int = 9999
 	var tipo: String = escolhido["tipo"]

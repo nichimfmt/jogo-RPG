@@ -33,14 +33,16 @@ static func maximo(expressao: String) -> int:
 
 
 # Rola o dano. No acerto crítico os dados são rolados duas vezes.
-static func rolar_dano(expressao: String, critico: bool = false) -> int:
+static func rolar_dano(expressao: String, critico: bool = false, faces: Array[int] = []) -> int:
 	var d: Dictionary = analisar(expressao)
 	var total: int = int(d["mod"])
 	var quantidade: int = int(d["n"])
 	if critico:
 		quantidade *= 2
 	for i in range(quantidade):
-		total += randi_range(1, maxi(int(d["lados"]), 1))
+		var face: int = randi_range(1, maxi(int(d["lados"]), 1))
+		faces.append(face)
+		total += face
 	return maxi(total, 1)
 
 

@@ -86,29 +86,29 @@ const ALCANCE_OBJETO: int = 8                        # até onde o Mestre pode "
 # lado: "jogador" (azul), "aliado" (verde), "inimigo" (vermelho), "neutro" (cinza)
 const MODELOS_CRIATURA: Dictionary = {
 	"kuzin": {"classe": "Meio-Elfo Ladino Nível 3", "lado": "jogador", "arquetipo": "brutamontes", "pv": 30, "ca": 14, "velocidade": 6,
-		"ataques": [{"nome": "Adaga", "alcance": 1, "dado": "1d4+3", "bonus": 5},
-					{"nome": "Arco curto", "alcance": 6, "dado": "1d6+3", "bonus": 5}]},
+		"ataques": [{"nome": "Adaga", "tipo_dano": "perfurante", "alcance": 1, "dado": "1d4+3", "bonus": 5},
+					{"nome": "Arco curto", "tipo_dano": "perfurante", "alcance": 6, "dado": "1d6+3", "bonus": 5}]},
 	"goblin": {"classe": "Goblin Guerreiro Nível 1", "lado": "inimigo", "arquetipo": "brutamontes", "pv": 7, "ca": 13, "velocidade": 6,
-		"ataques": [{"nome": "Cimitarra", "alcance": 1, "dado": "1d6+2", "bonus": 4}]},
+		"ataques": [{"nome": "Cimitarra", "tipo_dano": "cortante", "alcance": 1, "dado": "1d6+2", "bonus": 4}]},
 	"goblin_arqueiro": {"classe": "Goblin Arqueiro Nível 1", "lado": "inimigo", "arquetipo": "arqueiro", "pv": 9, "ca": 13, "velocidade": 6,
-		"ataques": [{"nome": "Arco curto", "alcance": 6, "dado": "1d6+2", "bonus": 4}]},
+		"ataques": [{"nome": "Arco curto", "tipo_dano": "perfurante", "alcance": 6, "dado": "1d6+2", "bonus": 4}]},
 	"goblin_xama": {"classe": "Goblin Xamã Nível 2", "lado": "inimigo", "arquetipo": "mago", "pv": 10, "ca": 12, "velocidade": 6,
-		"ataques": [{"nome": "Bola de fogo", "alcance": 6, "dado": "2d6", "area": 1, "automatico": true, "usos": 2},
-					{"nome": "Cajado", "alcance": 1, "dado": "1d6", "bonus": 3}]},
+		"ataques": [{"nome": "Bola de fogo", "tipo_dano": "fogo", "alcance": 6, "dado": "2d6", "area": 1, "automatico": true, "usos": 2},
+					{"nome": "Cajado", "tipo_dano": "contundente", "alcance": 1, "dado": "1d6", "bonus": 3}]},
 	"chefe_goblin": {"classe": "Goblin Chefe Nível 3", "lado": "inimigo", "arquetipo": "lider", "pv": 21, "ca": 15, "velocidade": 6,
-		"ataques": [{"nome": "Cimitarra", "alcance": 1, "dado": "1d6+2", "bonus": 4}]},
+		"ataques": [{"nome": "Cimitarra", "tipo_dano": "cortante", "alcance": 1, "dado": "1d6+2", "bonus": 4}]},
 	"orc": {"classe": "Meio-Orc Bárbaro Nível 5", "lado": "inimigo", "arquetipo": "brutamontes", "pv": 30, "ca": 13, "velocidade": 6,
-		"ataques": [{"nome": "Machado grande", "alcance": 1, "dado": "1d12+3", "bonus": 5}]},
+		"ataques": [{"nome": "Machado grande", "tipo_dano": "cortante", "alcance": 1, "dado": "1d12+3", "bonus": 5}]},
 	"ogro": {"classe": "Ogro Brutamontes Nível 4", "lado": "inimigo", "arquetipo": "brutamontes", "pv": 40, "ca": 11, "velocidade": 8,
-		"ataques": [{"nome": "Clava", "alcance": 1, "dado": "2d8+4", "bonus": 6}]},
+		"ataques": [{"nome": "Clava", "tipo_dano": "contundente", "alcance": 1, "dado": "2d8+4", "bonus": 6}]},
 	"lobo": {"classe": "Lobo Fera Nível 1", "lado": "inimigo", "arquetipo": "brutamontes", "pv": 11, "ca": 13, "velocidade": 8,
-		"ataques": [{"nome": "Mordida", "alcance": 1, "dado": "2d4+2", "bonus": 4}]},
+		"ataques": [{"nome": "Mordida", "tipo_dano": "perfurante", "alcance": 1, "dado": "2d4+2", "bonus": 4}]},
 	"bandido": {"classe": "Humano Bandido Nível 1", "lado": "inimigo", "arquetipo": "brutamontes", "pv": 11, "ca": 12, "velocidade": 6,
-		"ataques": [{"nome": "Espada curta", "alcance": 1, "dado": "1d6+1", "bonus": 3}]},
+		"ataques": [{"nome": "Espada curta", "tipo_dano": "cortante", "alcance": 1, "dado": "1d6+1", "bonus": 3}]},
 	"esqueleto": {"classe": "Esqueleto Arqueiro Nível 2", "lado": "inimigo", "arquetipo": "arqueiro", "pv": 13, "ca": 13, "velocidade": 6,
-		"ataques": [{"nome": "Arco curto", "alcance": 6, "dado": "1d6+2", "bonus": 4}]},
+		"ataques": [{"nome": "Arco curto", "tipo_dano": "perfurante", "alcance": 6, "dado": "1d6+2", "bonus": 4}]},
 	"guarda": {"classe": "Humana Guarda Nível 3", "lado": "aliado", "arquetipo": "lider", "pv": 22, "ca": 16, "velocidade": 6,
-		"ataques": [{"nome": "Lança", "alcance": 1, "dado": "1d6+3", "bonus": 5}]},
+		"ataques": [{"nome": "Lança", "tipo_dano": "perfurante", "alcance": 1, "dado": "1d6+3", "bonus": 5}]},
 	"aldeao": {"classe": "Humano Aldeão Nível 1", "lado": "aliado", "arquetipo": "covarde", "pv": 6, "ca": 10, "velocidade": 6,
 		"ataques": []},
 }
@@ -226,6 +226,9 @@ var agendas: Dictionary = {}
 var legenda_visivel: bool = false
 const LIMITE_CLIQUE: int = 60              # até onde dá para ir com UM clique fora de combate
 const LIMITE_EXPLORACAO: int = 20           # até quantas "células de custo" o Mestre move alguém fora de combate
+var _historico_batalha: Array[Dictionary] = []
+var _batalha_registrando: bool = false
+var _id_batalha: int = 0
 var eventos_turno: Array = []               # frases sobre o que aconteceu (vai para o Mestre narrar)
 var indice_modelo_teste: int = 0
 
@@ -1185,6 +1188,7 @@ func colocar_personagem(celula: Vector2i, nome: String, modelo: String = "goblin
 	_pintar_peca(peca, str(ficha["lado"]))
 	_criar_etiqueta(peca, ficha)
 	pecas[celula] = peca
+	_registrar_evento_batalha("entrada_combatente", {"ator": ficha["nome"], "celula": celula})
 
 	if ficha["lado"] == "jogador":
 		celula_jogador = celula
@@ -1210,6 +1214,7 @@ func remover_peca(celula: Vector2i) -> bool:
 		celula_jogador = CELULA_INVALIDA
 	peca.queue_free()
 	pecas.erase(celula)
+	_registrar_evento_batalha("saida_combatente", {"ator": ficha["nome"], "celula": celula})
 	_atualizar_destaques()
 	_atualizar_interface()
 	_notificar_personagens()
@@ -1265,6 +1270,7 @@ func mover_peca(origem: Vector2i, destino: Vector2i, caminho: Array = []) -> boo
 	else:
 		for c in caminho:
 			animacao.tween_property(peca, "position", _pos_peca(c), 0.12)
+	_registrar_evento_batalha("movimento", {"ator": ficha["nome"], "origem": origem, "destino": destino, "caminho": caminho.duplicate()})
 	return true
 
 
@@ -1444,6 +1450,27 @@ func linha_de_visao(a: Vector2i, b: Vector2i) -> bool:
 # COMBATE
 # ===============================================================
 
+func consultar_historico_batalha() -> Array[Dictionary]:
+	return _historico_batalha.duplicate(true)
+
+
+func _registrar_evento_batalha(tipo: String, detalhes: Dictionary = {}) -> void:
+	if not _batalha_registrando:
+		return
+	var evento: Dictionary = {"ordem": _historico_batalha.size() + 1, "rodada": rodada, "tipo": tipo}
+	evento.merge(detalhes)
+	_historico_batalha.append(evento)
+
+
+func _finalizar_historico_batalha(resultado: String) -> void:
+	_registrar_evento_batalha("fim_batalha", {"resultado": resultado})
+	_batalha_registrando = false
+
+
+func _batalha_em_andamento(id_batalha: int) -> bool:
+	return id_batalha == _id_batalha and modo == "combate" and not fim_de_jogo
+
+
 func _log(texto: String) -> void:
 	eventos_turno.append(texto)
 	print(texto)
@@ -1493,10 +1520,17 @@ func atacar(de: Vector2i, ataque: Dictionary, alvo_cel: Vector2i) -> void:
 			if distancia(c, alvo_cel) <= area:
 				atingidos.append(c)
 		_log("%s conjura %s em (%d,%d)." % [nome_a, nome_ataque, alvo_cel.x, alvo_cel.y])
-	else:
+	elif pecas.has(alvo_cel):
 		atingidos.append(alvo_cel)
 
-	var dano_da_area: int = Regras.rolar_dano(dado, false) if (area > 0 or automatico) else 0
+	var faces_area: Array[int] = []
+	var dano_da_area: int = Regras.rolar_dano(dado, false, faces_area) if (area > 0 or automatico) else 0
+	var evento_ataque: Dictionary = {"ator": nome_a, "acao": nome_ataque, "celula_alvo": alvo_cel,
+		"tipo_dano": str(ataque.get("tipo_dano", "")), "condicoes_aplicadas": []}
+	if ataque.has("usos"):
+		evento_ataque["usos_restantes"] = ataque["usos"]
+	if atingidos.is_empty():
+		_registrar_evento_batalha("ataque", evento_ataque.merged({"resultado": "sem_alvos", "dano": 0}))
 	var mortos: Array = []
 	for c in atingidos:
 		if not pecas.has(c):
@@ -1505,32 +1539,48 @@ func atacar(de: Vector2i, ataque: Dictionary, alvo_cel: Vector2i) -> void:
 		var nome_alvo: String = str(f.get("nome", "?"))
 		var dano: int = 0
 		var texto: String = ""
+		var resultado: String = "automatico"
+		var rolagem: Dictionary = {}
+		var faces_dano: Array[int] = []
+		var pv_antes: int = int(f["pv"])
 		if area > 0 or automatico:
 			dano = dano_da_area
+			faces_dano = faces_area
 			texto = "%s sofre %d de dano de %s" % [nome_alvo, dano, nome_ataque]
 		else:
 			var bonus: int = int(ataque.get("bonus", 0))
 			if alcance > 1 and altura_de(de) > altura_de(c):
 				bonus += 1
-			var rolagem: Dictionary = Regras.rolar_ataque(bonus, int(f.get("ca", 10)))
-			var conta: String = "d20=%d%+d=%d vs CA %d" % [rolagem["d20"], bonus, rolagem["total"], int(f.get("ca", 10))]
+			var ca: int = int(f.get("ca", 10))
+			rolagem = Regras.rolar_ataque(bonus, ca)
+			rolagem["bonus"] = bonus
+			rolagem["ca"] = ca
+			var conta: String = "d20=%d%+d=%d vs CA %d" % [rolagem["d20"], bonus, rolagem["total"], ca]
 			if rolagem["acertou"]:
-				dano = Regras.rolar_dano(dado, bool(rolagem["critico"]))
+				resultado = "critico" if rolagem["critico"] else "acerto"
+				dano = Regras.rolar_dano(dado, bool(rolagem["critico"]), faces_dano)
 				texto = "%s ataca %s com %s (%s): %s, %d de dano" % [nome_a, nome_alvo, nome_ataque, conta, "CRÍTICO" if rolagem["critico"] else "ACERTOU", dano]
 			else:
+				resultado = "erro"
 				texto = "%s ataca %s com %s (%s): ERROU" % [nome_a, nome_alvo, nome_ataque, conta]
 		if dano > 0:
-			var pv_antes: int = int(f["pv"])
 			f["pv"] = maxi(pv_antes - dano, 0)
 			texto += " (PV %d -> %d)" % [pv_antes, int(f["pv"])]
 			_piscar_peca(pecas[c])
 			_atualizar_etiqueta(pecas[c])
 			if int(f["pv"]) <= 0:
 				mortos.append(c)
+		_registrar_evento_batalha("ataque", evento_ataque.merged({
+			"alvo": nome_alvo, "resultado": resultado, "rolagem_ataque": rolagem,
+			"faces_dano": faces_dano, "expressao_dano": dado, "dano": dano,
+			"pv_antes": pv_antes, "pv_depois": int(f["pv"]),
+		}))
 		_log(texto + ".")
 
 	for c in mortos:
 		_morrer(c)
+	if fim_de_jogo and _batalha_registrando:
+		_finalizar_historico_batalha("derrota")
 	_atualizar_interface()
 	_notificar_personagens()
 
@@ -1541,6 +1591,7 @@ func _morrer(celula: Vector2i) -> void:
 	var ficha: Dictionary = ficha_em(celula)
 	var nome: String = str(ficha.get("nome", "?"))
 	var era_jogador: bool = str(ficha.get("lado", "")) == "jogador"
+	_registrar_evento_batalha("derrota_combatente", {"alvo": nome})
 	_log("%s caiu!" % nome)
 	registrar_evento("morte", "%s morreu." % nome)
 	remover_peca(celula)
@@ -1773,12 +1824,21 @@ func iniciar_combate(motivo: String = "", origem: String = "jogo") -> bool:
 			_falhar("Nenhum inimigo a até %d células tem linha de visão de Kuzin." % RAIO_DE_AMEACA)
 			return false
 
+	_id_batalha += 1
+	rodada = 1
+	_historico_batalha.clear()
+	_batalha_registrando = true
+	_registrar_evento_batalha("inicio_batalha", {"motivo": motivo.strip_edges(), "origem": origem})
+
 	# Rola iniciativa: d20 + modificador
 	var rolagens: Array = []
 	for celula in pecas.keys():
 		var f: Dictionary = ficha_em(celula)
-		var valor: int = randi_range(1, 20) + int(f.get("iniciativa", 0))
+		var dado: int = randi_range(1, 20)
+		var bonus: int = int(f.get("iniciativa", 0))
+		var valor: int = dado + bonus
 		rolagens.append({"nome": str(f["nome"]), "valor": valor})
+		_registrar_evento_batalha("iniciativa", {"ator": f["nome"], "d20": dado, "bonus": bonus, "total": valor})
 	rolagens.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["valor"]) > int(b["valor"]))
 	ordem_iniciativa = []
 	var partes: Array = []
@@ -1790,13 +1850,14 @@ func iniciar_combate(motivo: String = "", origem: String = "jogo") -> bool:
 	var mestre: Node = _mestre()
 	if mestre != null and mestre.conversa_atual() != "":
 		mestre.encerrar_conversa()
-	rodada = 1
+	_registrar_evento_batalha("ordem_iniciativa", {"combatentes": ordem_iniciativa.duplicate()})
+	_registrar_evento_batalha("inicio_rodada")
 	_limpar_debug()
 	_log("COMBATE! " + ("Motivo: " + motivo.strip_edges() + ". " if motivo.strip_edges() != "" else "") + "Iniciativa: " + ", ".join(partes) + ".")
 	registrar_evento("combate", "Combate começou. " + ("Motivo: " + motivo.strip_edges() + "." if motivo.strip_edges() != "" else ""))
 	_atualizar_destaques()
 	_atualizar_interface()
-	_loop_de_combate()          # roda "em segundo plano" (é uma corrotina)
+	_loop_de_combate(_id_batalha)
 	return true
 
 
@@ -1804,6 +1865,7 @@ func encerrar_combate() -> bool:
 	if modo != "combate":
 		_falhar("Não há combate em andamento.")
 		return false
+	_finalizar_historico_batalha("vitoria" if _contar_lado("inimigo") == 0 else "encerrado")
 	modo = "exploracao"
 	if not _na_area_da_cena(celula_jogador):
 		centro_cena = celula_jogador
@@ -1818,13 +1880,13 @@ func encerrar_combate() -> bool:
 	return true
 
 
-func _loop_de_combate() -> void:
+func _loop_de_combate(id_batalha: int) -> void:
 	for celula in pecas.keys():
-		while modo == "combate" and _em_movimento(celula):
+		while _batalha_em_andamento(id_batalha) and _em_movimento(celula):
 			await get_tree().process_frame
-	while modo == "combate" and not fim_de_jogo:
+	while _batalha_em_andamento(id_batalha):
 		for nome in ordem_iniciativa.duplicate():
-			if modo != "combate" or fim_de_jogo:
+			if not _batalha_em_andamento(id_batalha):
 				break
 			var celula: Vector2i = _achar_exato(str(nome))
 			if celula == CELULA_INVALIDA:
@@ -1832,8 +1894,9 @@ func _loop_de_combate() -> void:
 			ator_atual = str(nome)
 			if str(ficha_em(celula).get("lado", "")) == "jogador":
 				await _narrar_pendentes()
-				if modo != "combate" or fim_de_jogo:
+				if not _batalha_em_andamento(id_batalha):
 					break
+				_registrar_evento_batalha("inicio_turno", {"ator": nome})
 				_comecar_turno_do_jogador()
 				await jogador_encerrou
 			else:
@@ -1841,14 +1904,23 @@ func _loop_de_combate() -> void:
 				_atualizar_destaques()
 				_atualizar_interface()
 				await get_tree().create_timer(0.35).timeout
-				if modo != "combate" or fim_de_jogo:
+				if not _batalha_em_andamento(id_batalha):
 					break
-				await _turno_do_npc(celula)
-			if modo == "combate" and _contar_lado("inimigo") == 0:
+				_registrar_evento_batalha("inicio_turno", {"ator": nome})
+				await _turno_do_npc(celula, id_batalha)
+			if not _batalha_em_andamento(id_batalha):
+				break
+			_registrar_evento_batalha("fim_turno", {"ator": nome})
+			if _contar_lado("inimigo") == 0:
 				encerrar_combate()
-		if modo == "combate":
+		if _batalha_em_andamento(id_batalha):
 			rodada += 1
+			_registrar_evento_batalha("inicio_rodada")
+	if id_batalha != _id_batalha:
+		return
 	await _narrar_pendentes()
+	if id_batalha != _id_batalha:
+		return
 	turno_atual = Turno.JOGADOR
 	turno_em_andamento = false
 	_atualizar_destaques()
@@ -1877,7 +1949,7 @@ func _narrar_pendentes() -> void:
 		await mestre.narrar_turno(lista)
 
 
-func _turno_do_npc(origem: Vector2i) -> void:
+func _turno_do_npc(origem: Vector2i, id_batalha: int) -> void:
 	if not pecas.has(origem):
 		return
 	var ficha: Dictionary = ficha_em(origem)
@@ -1889,6 +1961,8 @@ func _turno_do_npc(origem: Vector2i) -> void:
 		_desenhar_debug(plano, origem)
 		_atualizar_interface()
 		await get_tree().create_timer(0.9).timeout
+		if not _batalha_em_andamento(id_batalha):
+			return
 
 	var destino: Vector2i = plano["destino"]
 	var atual: Vector2i = origem
@@ -1899,6 +1973,8 @@ func _turno_do_npc(origem: Vector2i) -> void:
 		if mover_peca(origem, destino, caminho):
 			atual = destino
 			await get_tree().create_timer(_duracao_do_caminho(caminho)).timeout
+			if not _batalha_em_andamento(id_batalha):
+				return
 
 	var ataque: Dictionary = plano["ataque"]
 	if not ataque.is_empty() and pecas.has(atual):
@@ -2200,6 +2276,7 @@ func dar_item(nome_objeto: String, nome_personagem: String) -> bool:
 	var ficha: Dictionary = ficha_em(cel)
 	obj["dono"] = str(ficha["nome"])
 	(ficha["inventario"] as Array).append(nome_objeto)
+	_registrar_evento_batalha("pegar_item", {"ator": ficha["nome"], "item": nome_objeto})
 	registrar_evento("item", "%s pegou %s." % [str(ficha["nome"]), nome_objeto])
 	_recalcular_obstaculos()
 	_atualizar_interface()
@@ -2227,13 +2304,15 @@ func soltar_item(nome_objeto: String) -> bool:
 
 func _largar(nome_objeto: String, celula: Vector2i) -> void:
 	var obj: Dictionary = objetos[nome_objeto]
-	var dono_cel: Vector2i = _achar_exato(str(obj["dono"]))
+	var dono: String = str(obj["dono"])
+	var dono_cel: Vector2i = _achar_exato(dono)
 	if dono_cel != CELULA_INVALIDA:
 		(ficha_em(dono_cel)["inventario"] as Array).erase(nome_objeto)
 	obj["dono"] = ""
 	obj["celula"] = celula
 	_posicionar_objeto(obj)
 	_recalcular_obstaculos()
+	_registrar_evento_batalha("soltar_item", {"ator": dono, "item": nome_objeto, "celula": celula})
 
 
 func _soltar_todos_os_itens(nome_dono: String, celula: Vector2i) -> void:
